@@ -15,14 +15,41 @@ namespace PeterDB {
     PagedFileManager &PagedFileManager::operator=(const PagedFileManager &) = default;
 
     RC PagedFileManager::createFile(const std::string &fileName) {
-        return -1;
+        fs::path filePath(fileName);
+
+        if (fs::exists(filePath)) {
+            // File already exists, return an appropriate error code
+            return -1;
+        }
+
+        // Create the file using std::ofstream
+        std::ofstream file(filePath);
+
+        if (file.is_open()) {
+            // File created successfully, close the file
+            file.close();
+            return 0;
+        } else {
+            // Failed to create the file, return an appropriate error code
+            return -1;
+        }
+
     }
 
     RC PagedFileManager::destroyFile(const std::string &fileName) {
-        return -1;
+        fs::path filePath(fileName);
+
+        if (!fs::exists(filePath)) {
+            // File not exists, return an appropriate error code
+            return -1;
+        }
+
+        fs::remove(filePath);
+        return 0;
     }
 
     RC PagedFileManager::openFile(const std::string &fileName, FileHandle &fileHandle) {
+        if(fs::is_regular_file(fileName)) return -1;
         return -1;
     }
 
