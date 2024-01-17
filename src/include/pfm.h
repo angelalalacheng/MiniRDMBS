@@ -6,6 +6,7 @@
 #include <string>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 
 namespace fs = std::__fs::filesystem;
 
@@ -39,6 +40,7 @@ namespace PeterDB {
         unsigned readPageCounter;
         unsigned writePageCounter;
         unsigned appendPageCounter;
+        std::string pageFileName;
 
         FileHandle();                                                       // Default constructor
         ~FileHandle();                                                      // Destructor

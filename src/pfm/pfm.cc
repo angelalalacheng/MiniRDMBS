@@ -17,30 +17,38 @@ namespace PeterDB {
     RC PagedFileManager::createFile(const std::string &fileName) {
         fs::path filePath(fileName);
 
+        // File already exists, return an error code
         if (fs::exists(filePath)) {
-            // File already exists, return an appropriate error code
             return -1;
         }
 
-        // Create the file using std::ofstream
-        std::ofstream file(filePath);
+        // create the file using std::ofstream
+        std::ofstream file(filePath , std::ios::binary);
+
+        // preallocate the size
+        file.seekp(PAGE_SIZE - 1, std::ios::beg);
+        file.write("", 1);
+
+        // write the initial value to the beginning of file
+        file.seekp(0, std::ios::beg);
+        unsigned initial[] = {0, 0, 0};
+        file.write(reinterpret_cast<char*>(initial), sizeof(initial));
 
         if (file.is_open()) {
             // File created successfully, close the file
             file.close();
             return 0;
         } else {
-            // Failed to create the file, return an appropriate error code
+            // Failed to create the file, return an error code
             return -1;
         }
-
     }
 
     RC PagedFileManager::destroyFile(const std::string &fileName) {
         fs::path filePath(fileName);
 
+        // File not exists, return an error code
         if (!fs::exists(filePath)) {
-            // File not exists, return an appropriate error code
             return -1;
         }
 
@@ -49,12 +57,56 @@ namespace PeterDB {
     }
 
     RC PagedFileManager::openFile(const std::string &fileName, FileHandle &fileHandle) {
-        if(fs::is_regular_file(fileName)) return -1;
-        return -1;
+        fs::path filePath(fileName);
+
+        // File not exists, return an error code
+        if (!fs::exists(filePath)) {
+            return -1;
+        }
+        std::fstream file(filePath, std::ios::in | std::ios::out | std::ios::binary);
+
+        if (!file.is_open()) {
+            // File opening failed, return an error code
+            return -1;
+        }
+
+        // read counters in the beginning of the hidden page
+        unsigned r=0, w=0, a=0;
+        file.seekg(0, std::ios::beg);
+        file.read(reinterpret_cast<char*>(&r), sizeof (int));
+        file.read(reinterpret_cast<char*>(&w), sizeof (int));
+        file.read(reinterpret_cast<char*>(&a), sizeof (int));
+
+        // resume the record
+        fileHandle.readPageCounter = r;
+        fileHandle.writePageCounter = w;
+        fileHandle.appendPageCounter = a;
+        fileHandle.pageFileName = fileName;
+
+//        std::cout<<"resume: "<<"r: "<<r<<" w: "<<w<<" a: "<<a<<std::endl;
+//        file.seekp(0, std::ios::end);
+//        std::cout<<"resume size: "<<file.tellp()<<std::endl;
+
+        return 0;
     }
 
     RC PagedFileManager::closeFile(FileHandle &fileHandle) {
-        return -1;
+        // All the file's pages are flushed to disk when the file is closed.????
+
+        std::fstream file(fileHandle.pageFileName, std::ios::in | std::ios::out | std::ios::binary);
+        file.seekp(0, std::ios::beg);
+
+        unsigned r = fileHandle.readPageCounter, w = fileHandle.writePageCounter, a = fileHandle.appendPageCounter;
+//        std::cout<<"before close: "<<"r: "<<r<<" w: "<<w<<" a: "<<a<<std::endl;
+
+        file.write(reinterpret_cast<const char*>(&r), sizeof(int));
+        file.write(reinterpret_cast<const char*>(&w), sizeof(int));
+        file.write(reinterpret_cast<const char*>(&a), sizeof(int));
+
+        file.flush();
+        file.close();
+
+        return 0;
     }
 
     FileHandle::FileHandle() {
@@ -66,23 +118,81 @@ namespace PeterDB {
     FileHandle::~FileHandle() = default;
 
     RC FileHandle::readPage(PageNum pageNum, void *data) {
-        return -1;
+        std::fstream file(pageFileName, std::ios::in | std::ios::out | std::ios::binary);
+
+        // cannot open the file
+        if (!file.is_open()) {
+            return -1;
+        }
+        // read the nonexistent page
+        if(pageNum > getNumberOfPages()){
+            return -1;
+        }
+
+        // move the stream position to the page
+        std::streampos offset = (pageNum + 1) * PAGE_SIZE;
+        file.seekg(offset, std::ios::beg);
+
+        // read the stream data from file to void *data
+        file.read(reinterpret_cast<char*>(data), PAGE_SIZE);
+
+        file.close();
+        readPageCounter = readPageCounter + 1;
+        return 0;
     }
 
     RC FileHandle::writePage(PageNum pageNum, const void *data) {
-        return -1;
+        std::fstream file(pageFileName, std::ios::in | std::ios::out | std::ios::binary);
+
+        // cannot open the file
+        if (!file.is_open()) {
+            return -1;
+        }
+        // write the nonexistent page
+        if(pageNum > getNumberOfPages()){
+            return -1;
+        }
+
+        // move the stream position to the page
+        std::streampos offset = (pageNum + 1) * PAGE_SIZE;
+        file.seekp(offset, std::ios::beg);
+
+        // write the data into file
+        file.write(reinterpret_cast<const char*>(data), PAGE_SIZE);
+
+        file.close();
+        writePageCounter = writePageCounter + 1;
+        return 0;
     }
 
     RC FileHandle::appendPage(const void *data) {
-        return -1;
+        std::fstream file(pageFileName, std::ios::in | std::ios::out | std::ios::binary);
+
+        if (!file.is_open()) {
+            return -1;
+        }
+
+        // move the stream position to the end of page
+        file.seekg (0, std::ios::end);
+
+        // write the data into file
+        file.write(reinterpret_cast<const char*>(data), PAGE_SIZE);
+
+        file.close();
+        appendPageCounter = appendPageCounter + 1;
+        return 0;
     }
 
     unsigned FileHandle::getNumberOfPages() {
-        return -1;
+        return appendPageCounter;
     }
 
     RC FileHandle::collectCounterValues(unsigned &readPageCount, unsigned &writePageCount, unsigned &appendPageCount) {
-        return -1;
+        // Copy the counter values to the provided variables
+        readPageCount = readPageCounter;
+        writePageCount = writePageCounter;
+        appendPageCount = appendPageCounter;
+        return 0;
     }
 
 } // namespace PeterDB
