@@ -49,6 +49,27 @@ namespace PeterDB {
         }
 
         std::cout << "data: " <<reinterpret_cast<const char*>(data) << std::endl;
+
+        // Calculate the record size
+        unsigned recordSize = 0;
+        for (const Attribute &attr : recordDescriptor) {
+            if (attr.type == TypeInt || attr.type == TypeReal) {
+                recordSize += 4; // 4 bytes for int or real
+            }
+            else if (attr.type == TypeVarChar) {
+                // Add 4 bytes for the length, plus the actual length of varchar data
+                recordSize += 4 + attr.length;
+            }
+        }
+
+        // Find an appropriate page or create a new one
+        PageNum pageNum = fileHandle.getNumberOfPages();
+        if (pageNum == 0) {
+            // Create a new page if the file is empty
+            fileHandle.appendPage(data);
+        }
+
+
     }
 
     RC RecordBasedFileManager::readRecord(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,
