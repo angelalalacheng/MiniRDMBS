@@ -5,7 +5,6 @@ namespace PeterDB {
         static RecordBasedFileManager _rbf_manager = RecordBasedFileManager();
         return _rbf_manager;
     }
-
     RecordBasedFileManager::RecordBasedFileManager() = default;
 
     RecordBasedFileManager::~RecordBasedFileManager() = default;
@@ -15,29 +14,52 @@ namespace PeterDB {
     RecordBasedFileManager &RecordBasedFileManager::operator=(const RecordBasedFileManager &) = default;
 
     RC RecordBasedFileManager::createFile(const std::string &fileName) {
+        if(!PagedFileManager::instance().createFile(fileName)){
+            return 0;
+        }
         return -1;
     }
 
     RC RecordBasedFileManager::destroyFile(const std::string &fileName) {
+        if(!PagedFileManager::instance().destroyFile(fileName)){
+            return 0;
+        }
         return -1;
     }
 
     RC RecordBasedFileManager::openFile(const std::string &fileName, FileHandle &fileHandle) {
+        if(!PagedFileManager::instance().openFile(fileName, fileHandle)){
+            return 0;
+        }
         return -1;
     }
 
     RC RecordBasedFileManager::closeFile(FileHandle &fileHandle) {
+        if(!PagedFileManager::instance().closeFile(fileHandle)){
+            return 0;
+        }
         return -1;
     }
 
     RC RecordBasedFileManager::insertRecord(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,
                                             const void *data, RID &rid) {
-        return -1;
+        std::cout << "# This is insertRecord" <<std::endl;
+        for(auto &it:recordDescriptor) {
+            std::cout << it.length << " " << it.name << " " << it.type << std::endl;
+        }
+
+        std::cout << "data: " <<reinterpret_cast<const char*>(data) << std::endl;
     }
 
     RC RecordBasedFileManager::readRecord(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,
                                           const RID &rid, void *data) {
-        return -1;
+        std::cout << "# This is readRecord" <<std::endl;
+        for(auto &it:recordDescriptor) {
+            std::cout << it.length << " " << it.name << " " << it.type << std::endl;
+        }
+
+        std::cout << "data: " <<reinterpret_cast<const char*>(data) << std::endl;
+        return 0;
     }
 
     RC RecordBasedFileManager::deleteRecord(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,
@@ -47,7 +69,7 @@ namespace PeterDB {
 
     RC RecordBasedFileManager::printRecord(const std::vector<Attribute> &recordDescriptor, const void *data,
                                            std::ostream &out) {
-        return -1;
+        return 0;
     }
 
     RC RecordBasedFileManager::updateRecord(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,

@@ -2,6 +2,7 @@
 #define _rbfm_h_
 
 #include <vector>
+#include <iostream>
 
 #include "pfm.h"
 
@@ -9,7 +10,7 @@ namespace PeterDB {
     // Record ID
     typedef struct {
         unsigned pageNum;           // page number
-        unsigned short slotNum;     // slot number in the page
+        unsigned short slotNum;     // slot number in the page  (benefit for deletion / if delete then do not make the hole not good)
     } RID;
 
     // Attribute
@@ -138,7 +139,6 @@ namespace PeterDB {
         ~RecordBasedFileManager();                                                  // Prevent unwanted destruction
         RecordBasedFileManager(const RecordBasedFileManager &);                     // Prevent construction by copying
         RecordBasedFileManager &operator=(const RecordBasedFileManager &);          // Prevent assignment
-
     };
 
 } // namespace PeterDB
