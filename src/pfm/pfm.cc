@@ -16,15 +16,13 @@ namespace PeterDB {
     PagedFileManager &PagedFileManager::operator=(const PagedFileManager &) = default;
 
     RC PagedFileManager::createFile(const std::string &fileName) {
-        std::__fs::filesystem::path filePath(fileName);
-
         // File already exists, return an error code
-        if (std::__fs::filesystem::exists(filePath)) {
+        if (std::__fs::filesystem::exists(fileName)) {
             return -1;
         }
 
         // create the file using std::ofstream
-        std::ofstream file(filePath , std::ios::binary);
+        std::ofstream file(fileName , std::ios::binary);
 
         // preallocate the size
         file.seekp(PAGE_SIZE - 1, std::ios::beg);
@@ -46,25 +44,21 @@ namespace PeterDB {
     }
 
     RC PagedFileManager::destroyFile(const std::string &fileName) {
-        std::__fs::filesystem::path filePath(fileName);
-
         // File not exists, return an error code
-        if (!std::__fs::filesystem::exists(filePath)) {
+        if (!std::__fs::filesystem::exists(fileName)) {
             return -1;
         }
 
-        std::__fs::filesystem::remove(filePath);
+        std::__fs::filesystem::remove(fileName);
         return 0;
     }
 
     RC PagedFileManager::openFile(const std::string &fileName, FileHandle &fileHandle) {
-        std::__fs::filesystem::path filePath(fileName);
-
         // File not exists, return an error code
-        if (!std::__fs::filesystem::exists(filePath)) {
+        if (!std::__fs::filesystem::exists(fileName)) {
             return -1;
         }
-        std::fstream file(filePath, std::ios::in | std::ios::out | std::ios::binary);
+        std::fstream file(fileName, std::ios::in | std::ios::out | std::ios::binary);
 
         if (!file.is_open()) {
             // File opening failed, return an error code
@@ -84,10 +78,6 @@ namespace PeterDB {
         fileHandle.appendPageCounter = a;
         fileHandle.pageFileName = fileName;
 
-//        std::cout<<"resume: "<<"r: "<<r<<" w: "<<w<<" a: "<<a<<std::endl;
-//        file.seekp(0, std::ios::end);
-//        std::cout<<"resume size: "<<file.tellp()<<std::endl;
-
         return 0;
     }
 
@@ -98,7 +88,6 @@ namespace PeterDB {
         file.seekp(0, std::ios::beg);
 
         unsigned r = fileHandle.readPageCounter, w = fileHandle.writePageCounter, a = fileHandle.appendPageCounter;
-//        std::cout<<"before close: "<<"r: "<<r<<" w: "<<w<<" a: "<<a<<std::endl;
 
         file.write(reinterpret_cast<const char*>(&r), sizeof(int));
         file.write(reinterpret_cast<const char*>(&w), sizeof(int));
