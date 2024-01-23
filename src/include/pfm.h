@@ -4,8 +4,6 @@
 #define PAGE_SIZE 4096
 
 #include <string>
-#include <filesystem>
-#include <fstream>
 
 namespace PeterDB {
 
