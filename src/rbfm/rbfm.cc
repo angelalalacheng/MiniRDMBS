@@ -1,5 +1,9 @@
 #include <cassert>
 #include <sstream>
+#include <cstring>
+#include <climits>
+#include <cmath>
+#include <fstream>
 #include "src/include/rbfm.h"
 
 namespace PeterDB {

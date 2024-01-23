@@ -54,7 +54,12 @@ namespace PeterDB {
             return -1; // Not exist
         }
 
-        std::__fs::filesystem::remove(fileName);
+        std::string command = "rm -f " + fileName;
+        int result = std::system(command.c_str());
+        if (result != 0) {
+            return -1;
+        }
+//        std::__fs::filesystem::remove(fileName);
         return 0;
     }
 
