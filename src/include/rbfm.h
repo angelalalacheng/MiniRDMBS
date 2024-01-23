@@ -2,14 +2,17 @@
 #define _rbfm_h_
 
 #include <vector>
+#include <iostream>
 
 #include "pfm.h"
+
+#define SLOT_DIR_SIZE 4
 
 namespace PeterDB {
     // Record ID
     typedef struct {
         unsigned pageNum;           // page number
-        unsigned short slotNum;     // slot number in the page
+        unsigned short slotNum;     // slot number in the page  (benefit for deletion / if delete then do not make the hole not good)
     } RID;
 
     // Attribute
@@ -132,13 +135,13 @@ namespace PeterDB {
                 const void *value,                    // used in the comparison
                 const std::vector<std::string> &attributeNames, // a list of projected attributes
                 RBFM_ScanIterator &rbfm_ScanIterator);
+        int findPageWithFreeSpace(FileHandle &fileHandle, int recordSize);
 
     protected:
         RecordBasedFileManager();                                                   // Prevent construction
         ~RecordBasedFileManager();                                                  // Prevent unwanted destruction
         RecordBasedFileManager(const RecordBasedFileManager &);                     // Prevent construction by copying
         RecordBasedFileManager &operator=(const RecordBasedFileManager &);          // Prevent assignment
-
     };
 
 } // namespace PeterDB
