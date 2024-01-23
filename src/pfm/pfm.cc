@@ -17,8 +17,10 @@ namespace PeterDB {
 
     RC PagedFileManager::createFile(const std::string &fileName) {
         // File already exists, return an error code
-        if (std::__fs::filesystem::exists(fileName)) {
-            return -1;
+        std::ifstream check(fileName);
+        if (check.good()) {
+            check.close();
+            return -1; // File already exists
         }
 
         // create the file using std::ofstream
@@ -45,8 +47,10 @@ namespace PeterDB {
 
     RC PagedFileManager::destroyFile(const std::string &fileName) {
         // File not exists, return an error code
-        if (!std::__fs::filesystem::exists(fileName)) {
-            return -1;
+        std::ifstream check(fileName);
+        if (!check.good()) {
+            check.close();
+            return -1; // Not exist
         }
 
         std::__fs::filesystem::remove(fileName);
@@ -55,9 +59,12 @@ namespace PeterDB {
 
     RC PagedFileManager::openFile(const std::string &fileName, FileHandle &fileHandle) {
         // File not exists, return an error code
-        if (!std::__fs::filesystem::exists(fileName)) {
-            return -1;
+        std::ifstream check(fileName);
+        if (!check.good()) {
+            check.close();
+            return -1; // Not exist
         }
+
         std::fstream file(fileName, std::ios::in | std::ios::out | std::ios::binary);
 
         if (!file.is_open()) {
