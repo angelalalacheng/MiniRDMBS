@@ -6,9 +6,6 @@
 #include <string>
 #include <filesystem>
 #include <fstream>
-#include <iostream>
-
-namespace fs = std::__fs::filesystem;
 
 namespace PeterDB {
 
