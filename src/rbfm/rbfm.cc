@@ -1,10 +1,9 @@
 #include <cassert>
 #include <sstream>
 #include <cstring>
-#include <climits>
-#include <cmath>
-#include <fstream>
+
 #include "src/include/rbfm.h"
+#include "src/rbfm/rbfm_utils.h"
 
 namespace PeterDB {
     RecordBasedFileManager &RecordBasedFileManager::instance() {
@@ -49,40 +48,27 @@ namespace PeterDB {
 
     RC RecordBasedFileManager::insertRecord(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,
                                             const void *data, RID &rid) {
-        std::fstream file(fileHandle.pageFileName, std::ios::in | std::ios::out | std::ios::binary);
-
         int offset = 0, recordMetaSize = 0, recordDataSize = 0;
         int fields = (int)recordDescriptor.size();
-        int indicatorSize = ceil((double)fields / CHAR_BIT);
-
-        void* recordMeta = malloc(indicatorSize + fields * 2);
-        void* recordData = malloc(PAGE_SIZE);
-        auto indicator = new unsigned char[indicatorSize];
+        int indicatorSize = getNullIndicatorSize(fields);
+        char indicator[indicatorSize];
 
         memset(indicator, 0, indicatorSize);
         memmove(indicator, (char *) data + offset, indicatorSize);
         offset += indicatorSize;
-
         // Get the Null Indicator Data
-        std::vector<int> nullFlag(fields, 0);
-        int count = 0;
-        for (int byteIndex = 0; byteIndex < indicatorSize; byteIndex++) {
-            for (int bitIndex = CHAR_BIT - 1; bitIndex >=0; bitIndex--) {
-                bool isNull = (indicator[byteIndex] & (1 << bitIndex)) != 0; // mask
-                if(isNull) nullFlag[count] = 1;
-                if(count == (fields - 1)) break;
-                count++;
-            }
-        }
+        std::vector<int> nullFlags = getNullFlags(fields, indicator, indicatorSize);
+
+        void* recordMeta = malloc(indicatorSize + fields * 2);
+        void* recordData = malloc(getActualDataSize(nullFlags, recordDescriptor, indicatorSize, data));
 
         // Extract the data
-        for(int i = 0; i< nullFlag.size(); i++){
-            if(!nullFlag[i]){
+        for(int i = 0; i< nullFlags.size(); i++){
+            if(!nullFlags[i]){
                 if(recordDescriptor[i].type == TypeInt){
                     int intVal;
                     memmove(&intVal, (char *) data + offset, sizeof(int));
                     offset += 4;
-
                     memmove((char *)recordData + recordDataSize, &intVal, sizeof(int));
                     recordDataSize += 4;
                 }
@@ -90,7 +76,6 @@ namespace PeterDB {
                     float floatVal;
                     memmove(&floatVal, (char *) data + offset, 4);
                     offset += 4;
-
                     memmove((char *)recordData + recordDataSize, &floatVal, sizeof(floatVal));
                     recordDataSize += 4;
                 }
@@ -102,7 +87,6 @@ namespace PeterDB {
                     s.resize(length);
                     memmove(&s[0], (char *) data + offset, length);
                     offset += length;
-
                     memmove((char *)recordData + recordDataSize, &length, sizeof(int));
                     recordDataSize += 4;
                     memmove((char *)recordData + recordDataSize, &s[0], length);
@@ -131,62 +115,31 @@ namespace PeterDB {
         recordOff += recordMetaSize;
         memmove((char *)record + recordOff, recordData, recordDataSize);
 
-        // insert the record
-        int16_t freeSpace = PAGE_SIZE;
-        int16_t recordNum = 0;
-        int16_t lastOff = 0, lastLen = 0;
-        int lastRecordDir;
-
-        int availablePage = findPageWithFreeSpace(fileHandle, totalRecordSize + SLOT_DIR_SIZE);
-
+        // find available page: first check the last page
+        int availablePage = checkFreeSpaceOfLastPage(fileHandle, totalRecordSize + SLOT_DIR_SIZE);
+        // find from first page
         if(availablePage == -1) {
-            fileHandle.appendPage(record);
-            availablePage = fileHandle.getNumberOfPages() - 1;
-            freeSpace = PAGE_SIZE - 4;
-            recordNum = 0;
-            lastRecordDir = 4;
+            availablePage = findFreePageFromFirst(fileHandle, totalRecordSize + SLOT_DIR_SIZE);
+            // no suitable page in file
+            if(availablePage == -1) {
+                initialNewPage(fileHandle);
+                availablePage = fileHandle.getNumberOfPages() - 1;
+            }
         }
-        else{
-            // Get the info about freeSpace and recordNum
-            file.seekg((availablePage + 2) * PAGE_SIZE - 4, std::ios::beg);
-            file.read(reinterpret_cast<char*>(&recordNum), 2);
-            file.read(reinterpret_cast<char*>(&freeSpace), 2);
 
-            // Get lastRecordOffset
-            lastRecordDir = 2 + 2 + recordNum * SLOT_DIR_SIZE;
-            file.seekg(-lastRecordDir, std::ios::cur);
-            file.read(reinterpret_cast<char*>(&lastOff), 2);
-            file.read(reinterpret_cast<char*>(&lastLen), 2);
-        }
+        // read the available page
+        char buffer[PAGE_SIZE];
+        fileHandle.readPage(availablePage, buffer);
+        std::vector<int16_t> dirInfo = getDirInfo(buffer, -1);
+        int16_t freeSpace = dirInfo[0], recordNum = dirInfo[1], lastRecordOffset = dirInfo[2], lastRecordLen = dirInfo[3];
 
         // Insert the record to the page
-        file.seekp((availablePage + 1) * PAGE_SIZE, std::ios::beg);
-        file.seekp(lastOff+lastLen, std::ios::cur);
-
-        file.write(reinterpret_cast<char*>(record), totalRecordSize);
-
-        // add new slot directory
-        int newRecordOff = lastOff + lastLen;
-        file.seekp((availablePage + 2) * PAGE_SIZE - lastRecordDir - SLOT_DIR_SIZE, std::ios::beg);
-        file.write(reinterpret_cast<char*>(&newRecordOff), 2);
-        file.write(reinterpret_cast<char*>(&totalRecordSize), 2);
-
-        // update metadata of slot directory
-        freeSpace -= (totalRecordSize + SLOT_DIR_SIZE);
-        recordNum += 1;
-
-        file.seekp((availablePage + 2) * PAGE_SIZE - 4, std::ios::beg);
-        file.write(reinterpret_cast<char*>(&recordNum), 2);
-        file.write(reinterpret_cast<char*>(&freeSpace), 2);
-
-
-        int val;
-        file.seekp((availablePage + 1) * PAGE_SIZE + 1, std::ios::beg);
-        file.read(reinterpret_cast<char*>(&val), 2);
+        memmove(buffer + lastRecordOffset + lastRecordLen, record, totalRecordSize);
+        updateSlotDirectory(buffer, (int16_t)(freeSpace - totalRecordSize - SLOT_DIR_SIZE), recordNum + 1, lastRecordOffset + lastRecordLen, totalRecordSize);
+        fileHandle.writePage(availablePage, buffer);
 
         rid.pageNum = availablePage;
-        rid.slotNum = recordNum;
-
+        rid.slotNum = recordNum + 1;
 
         free(recordMeta);
         free(recordData);
@@ -197,40 +150,19 @@ namespace PeterDB {
 
     RC RecordBasedFileManager::readRecord(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,
                                           const RID &rid, void *data) {
-        std::fstream file(fileHandle.pageFileName, std::ios::in | std::ios::out | std::ios::binary);
         int fields = (int)recordDescriptor.size();
-        int indicatorSize = ceil((double)fields / CHAR_BIT);
+        int indicatorSize = getNullIndicatorSize(fields);
+        int metaSize = indicatorSize + fields * 2;
 
+        char buffer[PAGE_SIZE];
+        fileHandle.readPage(rid.pageNum, buffer);
+        std::vector<int16_t> dirInfo = getDirInfo(buffer, rid.slotNum);
+        int16_t recordOffset = dirInfo[2], recordLen = dirInfo[3];
 
-        // Calculate the offset of tail of pageNum
-        int pageNumTail = PAGE_SIZE * (rid.pageNum + 2);
-        file.seekg(pageNumTail, std::ios::beg);
+        memmove((char *)data, buffer + recordOffset, indicatorSize);
+        memmove((char *)data + indicatorSize, buffer + recordOffset + metaSize, recordLen - metaSize);
 
-        // Move forward to the slot directory
-        int recordSlotDirOffset = 2 + 2 + rid.slotNum * SLOT_DIR_SIZE;
-        file.seekg(-recordSlotDirOffset, std::ios ::cur);
-
-        // Get offset and length of the record
-        int16_t offset, length;
-        file.read(reinterpret_cast<char*>(&offset), 2);
-        file.read(reinterpret_cast<char*>(&length), 2);
-
-        // Calculate the position of the record in the file
-        int recordOffset = PAGE_SIZE * (rid.pageNum + 1) + offset;
-
-        // Seek to the position of the record in the file
-        file.seekg(recordOffset, std::ios::beg);
-
-        // Read the record to buffer (need to change the format)
-        char* buffer = new char[length];
-        file.read(buffer, length);
-
-        // move to data
-        memmove((char *) data, buffer, indicatorSize);
-
-        int meta = indicatorSize + fields * 2;
-        memmove((char *) data + indicatorSize, buffer + meta, length - meta);
-
+//        delete[](buffer);
         return 0;
     }
 
@@ -242,32 +174,22 @@ namespace PeterDB {
     RC RecordBasedFileManager::printRecord(const std::vector<Attribute> &recordDescriptor, const void *data,
                                            std::ostream &out) {
         int offset = 0;
-
         int fields = recordDescriptor.size();
 
         // Get Null Indicator
-        int indicatorSize = ceil((double)fields / CHAR_BIT);
-        auto indicator = new unsigned char[indicatorSize];
+        int indicatorSize = getNullIndicatorSize(fields);
+        char indicator[indicatorSize];
 
         memset(indicator, 0, indicatorSize);
         memmove(indicator, (char *) data + offset, indicatorSize);
         offset += indicatorSize;
 
-        std::vector<int> nullFlag(fields, 0);
-        int count = 0;
-        for (int byteIndex = 0; byteIndex < indicatorSize; byteIndex++) {
-            for (int bitIndex = CHAR_BIT - 1; bitIndex >=0; bitIndex--) {
-                bool isNull = (indicator[byteIndex] & (1 << bitIndex)) != 0; // mask
-                if(isNull) nullFlag[count] = 1;
-                if(count == (fields - 1)) break;
-                count++;
-            }
-        }
+        std::vector<int> nullFlags = getNullFlags(fields, indicator, indicatorSize);
 
         // Extract the data
         std::string output;
-        for(int i = 0;i < nullFlag.size(); i++){
-            if(!nullFlag[i]){
+        for(int i = 0;i < nullFlags.size(); i++){
+            if(!nullFlags[i]){
                 if(recordDescriptor[i].type == TypeInt){
                     int intVal;
                     memmove(&intVal, (char *) data + offset, 4);
@@ -302,7 +224,6 @@ namespace PeterDB {
         output.pop_back();
 
         out<< output;
-//        std::cout << "print output: " << output << std::endl;
 
         return 0;
     }
@@ -323,34 +244,5 @@ namespace PeterDB {
                                     RBFM_ScanIterator &rbfm_ScanIterator) {
         return -1;
     }
-
-    int RecordBasedFileManager::findPageWithFreeSpace(FileHandle &fileHandle, int recordSize) {
-        if(fileHandle.getNumberOfPages() == 0) return -1;
-
-        std::fstream file(fileHandle.pageFileName, std::ios::binary | std::ios::in | std::ios::out);
-
-        // Skip the hidden page
-        file.seekg(PAGE_SIZE, std::ios::beg);
-
-        int pageNum = 0;
-        while (pageNum <= fileHandle.getNumberOfPages()) {
-            int16_t freeSpace = 0;
-            // Move the file pointer to the location of free space information
-            file.seekg(PAGE_SIZE - 2, std::ios::cur);
-
-            // Read the last two bytes which contain free space information
-            file.read(reinterpret_cast<char*>(&freeSpace), 2);
-
-            // Return the page number if free space is sufficient
-            if (freeSpace >= recordSize) {
-                return pageNum;
-            }
-
-            pageNum++;
-        }
-
-        return -1; // Return -1 if no suitable page is found
-    }
-
 } // namespace PeterDB
 
