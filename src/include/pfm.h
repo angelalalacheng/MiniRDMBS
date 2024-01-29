@@ -4,6 +4,7 @@
 #define PAGE_SIZE 4096
 
 #include <string>
+#include <fstream>
 
 namespace PeterDB {
 
@@ -36,6 +37,8 @@ namespace PeterDB {
         unsigned writePageCounter;
         unsigned appendPageCounter;
         std::string pageFileName;
+        std::shared_ptr<std::fstream> openFileStream;
+        // add vector to record the free space
 
         FileHandle();                                                       // Default constructor
         ~FileHandle();                                                      // Destructor

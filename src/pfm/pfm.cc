@@ -1,6 +1,8 @@
 #include "src/include/pfm.h"
 #include <cstring>
 #include <fstream>
+#include <iostream>
+#include <cassert>
 
 namespace PeterDB {
     PagedFileManager &PagedFileManager::instance() {
@@ -21,7 +23,8 @@ namespace PeterDB {
         std::ifstream check(fileName);
         if (check.good()) {
             check.close();
-            return -1; // File already exists
+            std::cout<< "error: File already exists" <<std::endl;
+            return -1;
         }
 
         // create the file using std::ofstream
@@ -51,6 +54,7 @@ namespace PeterDB {
         std::ifstream check(fileName);
         if (!check.good()) {
             check.close();
+            std::cout << "error: File does not exist" << std::endl;
             return -1; // Not exist
         }
 
@@ -59,55 +63,52 @@ namespace PeterDB {
         if (result != 0) {
             return -1;
         }
-//        std::__fs::filesystem::remove(fileName);
         return 0;
     }
 
     RC PagedFileManager::openFile(const std::string &fileName, FileHandle &fileHandle) {
         // File not exists, return an error code
-        std::ifstream check(fileName);
-        if (!check.good()) {
-            check.close();
+        std::shared_ptr<std::fstream> filestream = std::make_shared<std::fstream>(fileName, std::ios::in | std::ios::out | std::ios::binary);
+        if (!filestream->good()) {
+            filestream->close();
             return -1; // Not exist
         }
 
-        std::fstream file(fileName, std::ios::in | std::ios::out | std::ios::binary);
-
-        if (!file.is_open()) {
+        if (!filestream->is_open()) {
             // File opening failed, return an error code
+            std::cout << "Error: Open file error" <<std::endl;
             return -1;
         }
 
         // read counters in the beginning of the hidden page
         unsigned r=0, w=0, a=0;
-        file.seekg(0, std::ios::beg);
-        file.read(reinterpret_cast<char*>(&r), sizeof (int));
-        file.read(reinterpret_cast<char*>(&w), sizeof (int));
-        file.read(reinterpret_cast<char*>(&a), sizeof (int));
+        filestream->seekg(0, std::ios::beg);
+        filestream->read(reinterpret_cast<char*>(&r), sizeof (int));
+        filestream->read(reinterpret_cast<char*>(&w), sizeof (int));
+        filestream->read(reinterpret_cast<char*>(&a), sizeof (int));
 
         // resume the record
         fileHandle.readPageCounter = r;
         fileHandle.writePageCounter = w;
         fileHandle.appendPageCounter = a;
         fileHandle.pageFileName = fileName;
+        fileHandle.openFileStream = filestream;
 
         return 0;
     }
 
     RC PagedFileManager::closeFile(FileHandle &fileHandle) {
-        // All the file's pages are flushed to disk when the file is closed.????
-
-        std::fstream file(fileHandle.pageFileName, std::ios::in | std::ios::out | std::ios::binary);
-        file.seekp(0, std::ios::beg);
+        fileHandle.openFileStream->seekp(0, std::ios::beg);
 
         unsigned r = fileHandle.readPageCounter, w = fileHandle.writePageCounter, a = fileHandle.appendPageCounter;
 
-        file.write(reinterpret_cast<const char*>(&r), sizeof(int));
-        file.write(reinterpret_cast<const char*>(&w), sizeof(int));
-        file.write(reinterpret_cast<const char*>(&a), sizeof(int));
+        fileHandle.openFileStream->write(reinterpret_cast<const char*>(&r), sizeof(int));
+        fileHandle.openFileStream->write(reinterpret_cast<const char*>(&w), sizeof(int));
+        fileHandle.openFileStream->write(reinterpret_cast<const char*>(&a), sizeof(int));
 
-        file.flush();
-        file.close();
+        fileHandle.openFileStream->flush();
+        fileHandle.openFileStream->close();
+        fileHandle.openFileStream.reset();
 
         return 0;
     }
@@ -121,10 +122,8 @@ namespace PeterDB {
     FileHandle::~FileHandle() = default;
 
     RC FileHandle::readPage(PageNum pageNum, void *data) {
-        std::fstream file(pageFileName, std::ios::in | std::ios::out | std::ios::binary);
-
         // cannot open the file
-        if (!file.is_open()) {
+        if (!openFileStream->is_open()) {
             return -1;
         }
         // read the nonexistent page
@@ -134,21 +133,18 @@ namespace PeterDB {
 
         // move the stream position to the page
         std::streampos offset = (pageNum + 1) * PAGE_SIZE;
-        file.seekg(offset, std::ios::beg);
+        openFileStream->seekg(offset, std::ios::beg);
 
         // read the stream data from file to void *data
-        file.read(reinterpret_cast<char*>(data), PAGE_SIZE);
+        openFileStream->read(reinterpret_cast<char*>(data), PAGE_SIZE);
 
-        file.close();
         readPageCounter = readPageCounter + 1;
         return 0;
     }
 
     RC FileHandle::writePage(PageNum pageNum, const void *data) {
-        std::fstream file(pageFileName, std::ios::in | std::ios::out | std::ios::binary);
-
         // cannot open the file
-        if (!file.is_open()) {
+        if (!openFileStream->is_open()) {
             return -1;
         }
         // write the nonexistent page
@@ -158,30 +154,31 @@ namespace PeterDB {
 
         // move the stream position to the page
         std::streampos offset = (pageNum + 1) * PAGE_SIZE;
-        file.seekp(offset, std::ios::beg);
+        openFileStream->seekp(offset, std::ios::beg);
 
         // write the data into file
-        file.write(reinterpret_cast<const char*>(data), PAGE_SIZE);
+        openFileStream->write(reinterpret_cast<const char*>(data), PAGE_SIZE);
 
-        file.close();
         writePageCounter = writePageCounter + 1;
         return 0;
     }
 
     RC FileHandle::appendPage(const void *data) {
-        std::fstream file(pageFileName, std::ios::in | std::ios::out | std::ios::binary);
-
-        if (!file.is_open()) {
+        if (!openFileStream->is_open()) {
             return -1;
         }
 
         // move the stream position to the end of page
-        file.seekg (0, std::ios::end);
-
+        openFileStream->seekp(0, std::ios::end);
         // write the data into file
-        file.write(reinterpret_cast<const char*>(data), PAGE_SIZE);
+        openFileStream->write(reinterpret_cast<const char*>(data), PAGE_SIZE);
 
-        file.close();
+        if (!openFileStream->good()) {
+            std::cout<<"bad writing\n";
+            return -1; // Write failed
+        }
+
+        openFileStream->flush();
         appendPageCounter = appendPageCounter + 1;
         return 0;
     }
