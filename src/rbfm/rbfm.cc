@@ -159,8 +159,13 @@ namespace PeterDB {
         std::vector<int16_t> dirInfo = getDirInfo(buffer, rid.slotNum);
         int16_t recordOffset = dirInfo[2], recordLen = dirInfo[3];
 
+        if(recordOffset == -1){
+            return -1;
+        }
+
         memmove((char *)data, buffer + recordOffset, indicatorSize);
         memmove((char *)data + indicatorSize, buffer + recordOffset + metaSize, recordLen - metaSize);
+
 
 //        delete[](buffer);
         return 0;
@@ -168,7 +173,46 @@ namespace PeterDB {
 
     RC RecordBasedFileManager::deleteRecord(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,
                                             const RID &rid) {
-        return -1;
+        char buffer[PAGE_SIZE];
+        fileHandle.readPage(rid.pageNum, buffer);
+
+        std::vector<int16_t> dirInfoDeleteRecord = getDirInfo(buffer, rid.slotNum);
+        std::vector<int16_t> dirInfoLast = getDirInfo(buffer, -1);
+
+        int16_t deleteRecordOff = dirInfoDeleteRecord[2], deleteRecordLen = dirInfoDeleteRecord[3];
+        int16_t lastRecordOff = dirInfoLast[2], lastRecordLen = dirInfoLast[3];
+        int16_t freeSpace_ = dirInfoLast[0], slotNum_ = dirInfoLast[1];
+
+        // delete the record
+        int16_t deleteRecordNext = deleteRecordOff + deleteRecordLen;
+        int totalMoveLength = (lastRecordOff + lastRecordLen) - deleteRecordNext;
+        memmove(buffer + deleteRecordOff, buffer + deleteRecordNext, totalMoveLength);
+
+        int16_t freeSpace = freeSpace_ + deleteRecordLen, slotNum = slotNum_ - 1;
+
+        // update freeSpace & slotNum
+        memmove(buffer + PAGE_SIZE - 2, &freeSpace, sizeof (freeSpace));
+        memmove(buffer + PAGE_SIZE - 4, &slotNum, sizeof (slotNum));
+
+        // update all records offset
+        int dirOff = PAGE_SIZE - 4 - rid.slotNum * SLOT_DIR_SIZE;
+
+        int16_t marker = -1;
+        memmove(buffer + dirOff, &marker, sizeof (marker));
+
+        for(int i = 0; i < slotNum_ - rid.slotNum; i++){
+            dirOff -= SLOT_DIR_SIZE;
+            int16_t recordOff_;
+            memmove(&recordOff_, buffer + dirOff, sizeof (recordOff_));
+            int16_t recordOff = recordOff_ - deleteRecordLen;
+            memmove(buffer + dirOff, &recordOff, sizeof (recordOff));
+        }
+
+        fileHandle.writePage(rid.pageNum, buffer);
+
+        // how to reuse slot??
+
+        return 0;
     }
 
     RC RecordBasedFileManager::printRecord(const std::vector<Attribute> &recordDescriptor, const void *data,
