@@ -6,7 +6,8 @@
 
 #include "pfm.h"
 
-#define SLOT_DIR_SIZE 4
+#define SLOT_DIR_SIZE 6
+#define DIR_META 4
 
 namespace PeterDB {
     // Record ID
@@ -38,6 +39,13 @@ namespace PeterDB {
         NE_OP,      // !=
         NO_OP       // no condition
     } CompOp;
+
+    // Slot Information
+    typedef struct {
+        short offset;
+        short len;
+        short tombstone;
+    } SlotInfo;
 
 
     /********************************************************************
