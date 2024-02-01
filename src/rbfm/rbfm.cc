@@ -1,6 +1,8 @@
 #include <cassert>
 #include <sstream>
 #include <cstring>
+#include <cmath>
+#include <iostream>
 
 #include "src/include/rbfm.h"
 #include "src/rbfm/rbfm_utils.h"
@@ -102,6 +104,7 @@ namespace PeterDB {
             }
             recordMetaSize += 2;
         }
+        // what if it is the update record? there will be the rid behind the data
 
         // Calculate the record size and prepare the record
         int totalRecordSize = indicatorSize + recordMetaSize + recordDataSize;
@@ -130,16 +133,58 @@ namespace PeterDB {
         // read the available page
         char buffer[PAGE_SIZE];
         fileHandle.readPage(availablePage, buffer);
-        std::vector<int16_t> dirInfo = getDirInfo(buffer, -1);
-        int16_t freeSpace = dirInfo[0], recordNum = dirInfo[1], lastRecordOffset = dirInfo[2], lastRecordLen = dirInfo[3];
+        //-----------------old--------------------//
+//        std::vector<short> dirInfo = getDirInfo(buffer, -1);
+//        short freeSpace = dirInfo[0], recordNum = dirInfo[1], lastRecordOffset = dirInfo[2], lastRecordLen = dirInfo[3];
+//
+//        // Insert the record to the page
+//        memmove(buffer + lastRecordOffset + lastRecordLen, record, totalRecordSize);
+//        insertNewSlotDirectory(buffer, (int16_t)(freeSpace - totalRecordSize - SLOT_DIR_SIZE), recordNum + 1, lastRecordOffset + lastRecordLen, totalRecordSize);
+//        fileHandle.writePage(availablePage, buffer);
+
+        // ----------------new---------------------//
+        std::vector<short> pageInfo = getPageInfo(buffer);
+
+        // Check if there is empty slot
+        short emptySlot = getEmptySlotNumber(buffer, pageInfo[1]);
+        SlotInfo previousRecord;
+        short slotInfoPos;
+        if(emptySlot == -1){
+            // Get the last record in the page
+            previousRecord = getSlotInfo(buffer, pageInfo[1], -1);
+            pageInfo[1] += 1;
+            slotInfoPos = -1;
+        }
+        else{
+            // Get the previous record of the empty one
+            previousRecord = getSlotInfo(buffer, pageInfo[1], emptySlot - 1);
+            SlotInfo lastRecord = getSlotInfo(buffer, pageInfo[1], -1);
+            short headOfRemainRecord = previousRecord.offset + previousRecord.len;
+            short tailOfRemainRecord = lastRecord.offset + lastRecord.len;
+            // Shift the records right
+            memmove(buffer + headOfRemainRecord + totalRecordSize, buffer + headOfRemainRecord, tailOfRemainRecord - headOfRemainRecord);
+            // Update all slot in directory
+            updateSlotDirectory(buffer, pageInfo[1], emptySlot, totalRecordSize, 1);
+            slotInfoPos = emptySlot;
+        }
+
+        // Prepare new record information
+        SlotInfo newRecord;
+        newRecord.len = totalRecordSize;
+        newRecord.offset = previousRecord.offset + previousRecord.len;
+        newRecord.tombstone = 0;
 
         // Insert the record to the page
-        memmove(buffer + lastRecordOffset + lastRecordLen, record, totalRecordSize);
-        updateSlotDirectory(buffer, (int16_t)(freeSpace - totalRecordSize - SLOT_DIR_SIZE), recordNum + 1, lastRecordOffset + lastRecordLen, totalRecordSize);
+        memmove(buffer + previousRecord.offset + previousRecord.len, record, totalRecordSize);
+
+        // Update the slot directory
+        setPageInfo(buffer, pageInfo[0] - totalRecordSize - SLOT_DIR_SIZE, pageInfo[1]);
+        setSlotInfo(buffer, newRecord, pageInfo[1], slotInfoPos);
+
         fileHandle.writePage(availablePage, buffer);
 
         rid.pageNum = availablePage;
-        rid.slotNum = recordNum + 1;
+        rid.slotNum = (emptySlot == -1) ? pageInfo[1]: emptySlot;
 
         free(recordMeta);
         free(recordData);
@@ -156,19 +201,63 @@ namespace PeterDB {
 
         char buffer[PAGE_SIZE];
         fileHandle.readPage(rid.pageNum, buffer);
-        std::vector<int16_t> dirInfo = getDirInfo(buffer, rid.slotNum);
-        int16_t recordOffset = dirInfo[2], recordLen = dirInfo[3];
+        //------------------------old-----------------------//
+//        std::vector<int16_t> dirInfo = getDirInfo(buffer, rid.slotNum);
+//        int16_t recordOffset = dirInfo[2], recordLen = dirInfo[3];
+//
+//        if(recordOffset == -1){
+//            return -1;
+//        }
+//
+//        memmove((char *)data, buffer + recordOffset, indicatorSize);
+//        memmove((char *)data + indicatorSize, buffer + recordOffset + metaSize, recordLen - metaSize);
 
-        memmove((char *)data, buffer + recordOffset, indicatorSize);
-        memmove((char *)data + indicatorSize, buffer + recordOffset + metaSize, recordLen - metaSize);
+        //------------------------new-----------------------//
+        std::vector<short> pageInfo = getPageInfo(buffer);
+        SlotInfo targetRecord = getSlotInfo(buffer, pageInfo[1], rid.slotNum);
 
-//        delete[](buffer);
+        if(targetRecord.offset == -1){
+            return -1;
+        }
+
+        memmove((char *)data, buffer + targetRecord.offset, indicatorSize);
+        memmove((char *)data + indicatorSize, buffer + targetRecord.offset + metaSize, targetRecord.len - metaSize);
+
         return 0;
     }
 
     RC RecordBasedFileManager::deleteRecord(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,
                                             const RID &rid) {
-        return -1;
+        char buffer[PAGE_SIZE];
+        short marker = -1;
+        fileHandle.readPage(rid.pageNum, buffer);
+
+        // get info
+        std::vector<short> pageInfo = getPageInfo(buffer);
+        SlotInfo deletedRecord = getSlotInfo(buffer, pageInfo[1], rid.slotNum);
+        SlotInfo lastRecord = getSlotInfo(buffer, pageInfo[1], -1);
+
+        // edge case: delete the deleted record
+        if(deletedRecord.offset == -1){
+            return -1;
+        }
+
+        // delete record
+        short headOfRemainRecord = deletedRecord.offset + deletedRecord.len;
+        short tailOfRemainRecord = lastRecord.offset + lastRecord.len;
+        short moveLen = tailOfRemainRecord - headOfRemainRecord;
+        memmove(buffer + deletedRecord.offset, buffer + headOfRemainRecord, moveLen);
+        setPageInfo(buffer, pageInfo[0] + deletedRecord.len, pageInfo[1]);
+
+        // update all records offset
+        int dirOff = PAGE_SIZE - DIR_META - rid.slotNum * SLOT_DIR_SIZE;
+        memmove(buffer + dirOff, &marker, sizeof (marker));
+        updateSlotDirectory(buffer, pageInfo[1],  rid.slotNum, deletedRecord.len, 0);
+
+        fileHandle.writePage(rid.pageNum, buffer);
+
+        // reuse slot -> update method in insert
+        return 0;
     }
 
     RC RecordBasedFileManager::printRecord(const std::vector<Attribute> &recordDescriptor, const void *data,
@@ -230,7 +319,7 @@ namespace PeterDB {
 
     RC RecordBasedFileManager::updateRecord(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,
                                             const void *data, const RID &rid) {
-        return -1;
+        return 0;
     }
 
     RC RecordBasedFileManager::readAttribute(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,
