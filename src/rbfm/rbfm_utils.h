@@ -49,6 +49,65 @@ int getActualDataSize(const std::vector<int>& nullFlags, const std::vector<Peter
     return actualDataSize;
 }
 
+void serializeData(const std::vector<int>& nullFlags, const std::vector<PeterDB::Attribute> &recordDescriptor, const void* data, const char * indicator, const PeterDB::RID &rid, char* serializeData){
+    int offset = 0, recordMetaSize = 0, recordDataSize = 0;
+    int fields = (int)recordDescriptor.size();
+    int indicatorSize = getNullIndicatorSize(fields);
+    int metaFieldSize = indicatorSize + fields * 2;
+    int actualDataSize = getActualDataSize(nullFlags, recordDescriptor, indicatorSize, data);
+    char recordMeta[metaFieldSize], recordData[actualDataSize];
+
+    offset += indicatorSize;
+    for(int i = 0; i< nullFlags.size(); i++){
+        if(!nullFlags[i]){
+            if(recordDescriptor[i].type == PeterDB::TypeInt){
+                int intVal;
+                memmove(&intVal, (char *) data + offset, sizeof(int));
+                offset += 4;
+                memmove(recordData + recordDataSize, &intVal, sizeof(int));
+                recordDataSize += 4;
+            }
+            else if(recordDescriptor[i].type == PeterDB::TypeReal){
+                float floatVal;
+                memmove(&floatVal, (char *) data + offset, 4);
+                offset += 4;
+                memmove(recordData + recordDataSize, &floatVal, sizeof(floatVal));
+                recordDataSize += 4;
+            }
+            else if(recordDescriptor[i].type == PeterDB::TypeVarChar) {
+                int length;
+                std::string s;
+                memmove(&length, (char *) data + offset, 4);
+                offset += 4;
+                s.resize(length);
+                memmove(&s[0], (char *) data + offset, length);
+                offset += length;
+                memmove(recordData + recordDataSize, &length, sizeof(int));
+                recordDataSize += 4;
+                memmove(recordData + recordDataSize, &s[0], length);
+                recordDataSize += length;
+            }
+
+            int offVal = (int)(indicatorSize + fields * sizeof(short) + recordDataSize);
+            memmove(recordMeta + recordMetaSize, &offVal, 2);
+        }
+        else{
+            int offVal;
+            memmove(&offVal, recordMeta + recordMetaSize - 2, 2);
+        }
+        recordMetaSize += 2;
+    }
+
+    int pos = 0;
+    memmove(serializeData + pos, &rid, sizeof(PeterDB::RID));
+    pos += sizeof(PeterDB::RID);
+    memmove(serializeData + pos, indicator, indicatorSize);
+    pos += indicatorSize;
+    memmove(serializeData + pos, recordMeta, recordMetaSize);
+    pos += recordMetaSize;
+    memmove(serializeData + pos, recordData, recordDataSize);
+}
+
 void initialNewPage(PeterDB::FileHandle &fileHandle){
     void* dummy = malloc(sizeof(int));
     int16_t freeSpace = PAGE_SIZE - 4, slotNum = 0;
@@ -139,10 +198,10 @@ void updateSlotDirectory(char* page, int totalSlotNum, int target, int delta, in
 
     for(int i = 0; i < totalSlotNum - target; i++){
         dirOff -= SLOT_DIR_SIZE;
-        short recordOff_;
-        memmove(&recordOff_, page + dirOff, sizeof (recordOff_));
-        short recordOff = recordOff_ - delta;
-        memmove(page + dirOff, &recordOff, sizeof (recordOff));
+        PeterDB::SlotInfo slot_;
+        memmove(&slot_, page + dirOff, sizeof (slot_));
+        slot_.offset -= delta;
+        memmove(page + dirOff, &slot_, sizeof (slot_));
     }
 }
 
@@ -156,10 +215,6 @@ int checkFreeSpaceOfLastPage(PeterDB::FileHandle &fileHandle, int recordSize) {
     int16_t freeSpace;
     fileHandle.openFileStream->seekg(-2, std::ios::end);
     fileHandle.openFileStream->read(reinterpret_cast<char*>(&freeSpace), 2);
-    if(freeSpace > PAGE_SIZE){
-        std::cout << freeSpace <<std::endl;
-        assert(0);
-    }
     if (freeSpace >= recordSize) {
         return fileHandle.getNumberOfPages() - 1;
     }
