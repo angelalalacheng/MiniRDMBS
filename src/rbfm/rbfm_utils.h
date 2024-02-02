@@ -49,12 +49,11 @@ int getActualDataSize(const std::vector<int>& nullFlags, const std::vector<Peter
     return actualDataSize;
 }
 
-void serializeData(const std::vector<int>& nullFlags, const std::vector<PeterDB::Attribute> &recordDescriptor, const void* data, const char * indicator, const PeterDB::RID &rid, char* serializeData){
+void serializeData(const std::vector<int>& nullFlags, const std::vector<PeterDB::Attribute> &recordDescriptor, const void* data, const char * indicator, const PeterDB::RID &rid, const std::vector<int>&recordSizeInfo, char* serializeData){
     int offset = 0, recordMetaSize = 0, recordDataSize = 0;
-    int fields = (int)recordDescriptor.size();
-    int indicatorSize = getNullIndicatorSize(fields);
-    int metaFieldSize = indicatorSize + fields * 2;
-    int actualDataSize = getActualDataSize(nullFlags, recordDescriptor, indicatorSize, data);
+    int indicatorSize = recordSizeInfo[0];
+    int metaFieldSize = recordSizeInfo[1];
+    int actualDataSize = recordSizeInfo[2];
     char recordMeta[metaFieldSize], recordData[actualDataSize];
 
     offset += indicatorSize;
@@ -88,7 +87,7 @@ void serializeData(const std::vector<int>& nullFlags, const std::vector<PeterDB:
                 recordDataSize += length;
             }
 
-            int offVal = (int)(indicatorSize + fields * sizeof(short) + recordDataSize);
+            int offVal = (int)(indicatorSize + recordDescriptor.size() * sizeof(short) + recordDataSize);
             memmove(recordMeta + recordMetaSize, &offVal, 2);
         }
         else{

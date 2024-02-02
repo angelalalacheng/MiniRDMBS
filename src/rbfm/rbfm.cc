@@ -58,7 +58,11 @@ namespace PeterDB {
         // Get the Null Indicator Data
         std::vector<int> nullFlags = getNullFlags(fields, indicator, indicatorSize);
 
-        int totalRecordSize = sizeof(RID) + indicatorSize + fields * 2 + getActualDataSize(nullFlags, recordDescriptor, indicatorSize, data);
+        // Calculate each part data size
+        int fieldOffsetSize = fields * 2;
+        int actualDataSize = getActualDataSize(nullFlags, recordDescriptor, indicatorSize, data);
+        std::vector<int> recordSizeInfo = {indicatorSize, fieldOffsetSize, actualDataSize};
+        int totalRecordSize = sizeof(RID) + indicatorSize + fieldOffsetSize + actualDataSize;
 
         // find available page: first check the last page
         int availablePage = checkFreeSpaceOfLastPage(fileHandle, totalRecordSize + SLOT_DIR_SIZE);
@@ -111,7 +115,7 @@ namespace PeterDB {
 
         // serialize data
         char record [totalRecordSize];
-        serializeData(nullFlags, recordDescriptor, data, indicator, rid, record);
+        serializeData(nullFlags, recordDescriptor, data, indicator, rid, recordSizeInfo, record);
 
         RID nRid;
         memmove(&nRid, record, sizeof(RID));
@@ -300,9 +304,12 @@ namespace PeterDB {
         short startPositionOfRemainRecord = targetRecord.offset + targetRecord.len;
         short lastPositionOfAllRecords = lastRecord.offset + lastRecord.len;
 
-        short updatedRecordLength = sizeof(RID) + indicatorSize + fields * 2 + getActualDataSize(nullFlags, recordDescriptor, indicatorSize, data);
+        int fieldOffsetSize = fields * 2;
+        int actualDataSize = getActualDataSize(nullFlags, recordDescriptor, indicatorSize, data);
+        std::vector<int> recordSizeInfo = {indicatorSize, fieldOffsetSize, actualDataSize};
+        short updatedRecordLength = sizeof(RID) + indicatorSize + fields * 2 + actualDataSize;
         char serializeUpdatedData[updatedRecordLength];
-        serializeData(nullFlags, recordDescriptor, data, indicator, targetRID, serializeUpdatedData);
+        serializeData(nullFlags, recordDescriptor, data, indicator, targetRID, recordSizeInfo, serializeUpdatedData);
 
         int delta = updatedRecordLength - targetRecord.len;
         // Free space is enough
