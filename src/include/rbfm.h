@@ -69,12 +69,27 @@ namespace PeterDB {
 
         ~RBFM_ScanIterator() = default;;
 
+        std::vector<RID> candidates;
+        size_t currentIndex = 0;
+
         // Never keep the results in the memory. When getNextRecord() is called,
         // a satisfying record needs to be fetched from the file.
         // "data" follows the same format as RecordBasedFileManager::insertRecord().
-        RC getNextRecord(RID &rid, void *data) { return RBFM_EOF; };
+        RC getNextRecord(RID &rid, void *data) { // Be attention to tombstone
+            // Check if we've reached the end of the candidates vector
+            if (currentIndex >= candidates.size()) {
+                return RBFM_EOF;
+            }
+            rid = candidates[currentIndex];
+            currentIndex++; // Move to the next candidate
+            return 0; // Assuming 0 is the success code
+        };
 
-        RC close() { return -1; };
+        RC close() {
+            currentIndex = 0;
+            candidates.clear();
+            return -1;
+        };
     };
 
     class RecordBasedFileManager {

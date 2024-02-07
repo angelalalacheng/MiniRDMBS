@@ -9,9 +9,32 @@
 #include <cstring>
 #include <vector>
 #include <iostream>
+#include <string>
+#include <unordered_map>
 
 int getNullIndicatorSize(int fields){
     return ceil((double)fields / CHAR_BIT);
+}
+
+int getSpecificAttrNullFlag(const char* record, int indicatorSize, int target){
+    char indicator[indicatorSize];
+    memmove(indicator, record + sizeof(PeterDB::RID), indicatorSize);
+
+    target -= 1;
+    return indicator[target / 8] & (1 << (7 - target % 8));
+}
+
+short getSpecificAttrOffset(const char* record, int indicatorSize, int fields, int targetAttr){
+    if (targetAttr == 0){
+        return sizeof(PeterDB::RID) + indicatorSize + fields * sizeof(short);
+    }
+
+    int targetAttrOffsetPos = sizeof(PeterDB::RID) + indicatorSize + (targetAttr - 1) * 2;
+    short targetAttrOffset;
+
+    memmove(&targetAttrOffset, record + targetAttrOffsetPos, sizeof(short));
+
+    return targetAttrOffset;
 }
 
 std::vector<int> getNullFlags(int fields, const char* indicator, int indicatorSize){
@@ -87,12 +110,15 @@ void serializeData(const std::vector<int>& nullFlags, const std::vector<PeterDB:
                 recordDataSize += length;
             }
 
-            int offVal = (int)(indicatorSize + recordDescriptor.size() * sizeof(short) + recordDataSize);
+            int offVal = (int)(sizeof(PeterDB::RID) + indicatorSize + recordDescriptor.size() * sizeof(short) + recordDataSize);
             memmove(recordMeta + recordMetaSize, &offVal, 2);
+//            std::cout << "offVal " + std::to_string(i) + ": " << offVal <<std::endl;
         }
         else{
             int offVal;
             memmove(&offVal, recordMeta + recordMetaSize - 2, 2);
+            memmove(recordMeta + recordMetaSize, &offVal, 2);
+//            std::cout << "offVal null " + std::to_string(i) + ": " << offVal <<std::endl;
         }
         recordMetaSize += 2;
     }
@@ -244,6 +270,121 @@ int findFreePageFromFirst(PeterDB::FileHandle &fileHandle, int recordSize) {
     }
 
     return -1; // Return -1 if no suitable page is found
+}
+
+bool compareInt(const int &value1, const int &value2, PeterDB::CompOp operation) {
+    switch(operation) {
+        case PeterDB::EQ_OP:
+            return value1 == value2;
+        case PeterDB::LT_OP:
+            return value1 < value2;
+        case PeterDB::LE_OP:
+            return value1 <= value2;
+        case PeterDB::GT_OP:
+            return value1 > value2;
+        case PeterDB::GE_OP:
+            return value1 >= value2;
+        case PeterDB::NE_OP:
+            return value1 != value2;
+        case PeterDB::NO_OP:
+            // 在NO_OP情况下，你可能想要特殊处理，例如总是返回true或false
+            return true;
+        default:
+            std::cerr << "Unknown comparison operator." << std::endl;
+            return false;
+    }
+}
+
+bool compareFloat(const float &value1, const float &value2, PeterDB::CompOp operation) {
+    switch(operation) {
+        case PeterDB::EQ_OP:
+            return value1 == value2;
+        case PeterDB::LT_OP:
+            return value1 < value2;
+        case PeterDB::LE_OP:
+            return value1 <= value2;
+        case PeterDB::GT_OP:
+            return value1 > value2;
+        case PeterDB::GE_OP:
+            return value1 >= value2;
+        case PeterDB::NE_OP:
+            return value1 != value2;
+        case PeterDB::NO_OP:
+            // 在NO_OP情况下，你可能想要特殊处理，例如总是返回true或false
+            return true;
+        default:
+            std::cerr << "Unknown comparison operator." << std::endl;
+            return false;
+    }
+}
+
+bool compareString(const std::string& value1, const std::string& value2, PeterDB::CompOp operation) {
+    switch(operation) {
+        case PeterDB::EQ_OP:
+            return value1 == value2;
+        case PeterDB::LT_OP:
+            return value1 < value2;
+        case PeterDB::LE_OP:
+            return value1 <= value2;
+        case PeterDB::GT_OP:
+            return value1 > value2;
+        case PeterDB::GE_OP:
+            return value1 >= value2;
+        case PeterDB::NE_OP:
+            return value1 != value2;
+        case PeterDB::NO_OP:
+            // 在NO_OP情况下，你可能想要特殊处理，例如总是返回true或false
+            return true;
+        default:
+            std::cerr << "Unknown comparison operator." << std::endl;
+            return false;
+    }
+}
+
+PeterDB::RID resolveTombstone(PeterDB::FileHandle &fileHandle, PeterDB::RID rid) {
+    char buffer[PAGE_SIZE];
+    bool isTombstone = true;
+    PeterDB::RID currentRID = rid;
+
+    while (isTombstone) {
+        fileHandle.readPage(currentRID.pageNum, buffer);
+        std::vector<short> pageInfo = getPageInfo(buffer);
+        PeterDB::SlotInfo slotInfo = getSlotInfo(buffer, pageInfo[1], currentRID.slotNum);
+
+        if (slotInfo.tombstone == 1) {
+            memmove(&currentRID, buffer + slotInfo.offset, sizeof(PeterDB::RID));
+        } else {
+            isTombstone = false;
+        }
+    }
+
+    return currentRID;
+}
+
+char* getRecordFromRID(PeterDB::FileHandle &fileHandle, PeterDB::RID rid, short &len) {
+    rid = resolveTombstone(fileHandle, rid);
+
+    char page[PAGE_SIZE];
+    fileHandle.readPage(rid.pageNum, page);
+
+    std::vector<short> pageInfo = getPageInfo(page);
+    PeterDB::SlotInfo recordInfo = getSlotInfo(page, pageInfo[1], rid.slotNum);
+
+    char* record = new char[recordInfo.len];
+    memmove(record, page + recordInfo.offset, recordInfo.len);
+
+    len = recordInfo.len;
+    return record;
+}
+
+std::unordered_map<std::string, PeterDB::Attribute> convertRecordDescriptor(const std::vector<PeterDB::Attribute> &recordDescriptor){
+    std::unordered_map<std::string, PeterDB::Attribute> attributeMap;
+
+    for(PeterDB::Attribute attr: recordDescriptor){
+        attributeMap[attr.name] = attr;
+    }
+
+    return attributeMap;
 }
 
 //--------------------no use function-----------------------//

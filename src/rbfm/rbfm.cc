@@ -1,6 +1,7 @@
 #include <cassert>
 #include <sstream>
 #include <cstring>
+#include <unordered_map>
 #include <cmath>
 #include <iostream>
 
@@ -357,14 +358,111 @@ namespace PeterDB {
 
     RC RecordBasedFileManager::readAttribute(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,
                                              const RID &rid, const std::string &attributeName, void *data) {
-        return -1;
+        // check whether it is tombstone
+        char buffer[PAGE_SIZE];
+        RID targetRID = resolveTombstone(fileHandle, rid);
+        fileHandle.readPage(targetRID.pageNum, buffer);
+        std::vector<short> pageInfo = getPageInfo(buffer);
+        SlotInfo targetRecord = getSlotInfo(buffer, pageInfo[1], targetRID.slotNum);
+
+        // get the target record
+        char record[targetRecord.len];
+        memmove(record, buffer + targetRecord.offset, targetRecord.len);
+
+        // get the target attribute of target record
+        int numOfAttr = 0;
+        Attribute targetAttr;
+        for(int i = 0; i < recordDescriptor.size(); i++){
+            if(recordDescriptor[i].name == attributeName){
+                numOfAttr = i + 1;
+                targetAttr = recordDescriptor[i];
+                break;
+            }
+        }
+
+        // get null flags
+        int indicatorSize = getNullIndicatorSize(recordDescriptor.size());
+        int isNull = getSpecificAttrNullFlag(record, indicatorSize, numOfAttr);
+
+        if(isNull){
+            data = nullptr;
+        }
+        else{
+            short startPos, endPos;
+
+            startPos = getSpecificAttrOffset(record, indicatorSize, recordDescriptor.size(), numOfAttr - 1);
+            endPos = getSpecificAttrOffset(record, indicatorSize, recordDescriptor.size(), numOfAttr);
+
+            if (targetAttr.type == PeterDB::TypeVarChar){
+                int length;
+                memmove(&length, record + startPos, sizeof(int));
+                memmove(data, record + startPos + sizeof(int), length);
+            }
+            else{
+                memmove(data, record + startPos, endPos - startPos);
+            }
+        }
+
+        return 0;
+
     }
 
     RC RecordBasedFileManager::scan(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,
                                     const std::string &conditionAttribute, const CompOp compOp, const void *value,
                                     const std::vector<std::string> &attributeNames,
                                     RBFM_ScanIterator &rbfm_ScanIterator) {
-        return -1;
+        std::unordered_map<std::string, Attribute> attributeMap = convertRecordDescriptor(recordDescriptor);
+
+        Attribute compareAttr = attributeMap[conditionAttribute];
+
+        char data[compareAttr.length + 4];
+        memset(data, 0, compareAttr.length + 4);
+
+        PageNum currentPage = 0;
+        char buffer[PAGE_SIZE];
+        std::vector<short> pageInfo;
+        RID rid;
+        while(currentPage < fileHandle.getNumberOfPages()){
+            fileHandle.readPage(currentPage, buffer);
+            pageInfo = getPageInfo(buffer);
+            for(int i = 1; i <= pageInfo[1]; i++){
+                rid.pageNum = currentPage;
+                rid.slotNum = i;
+                readAttribute(fileHandle, recordDescriptor, rid, conditionAttribute, data);
+                bool good = false;
+                switch(compareAttr.type){
+                    case TypeInt:
+                        int intVal1, intVal2;
+                        intVal1 = *reinterpret_cast<int*>(data);
+                        intVal2 =  *reinterpret_cast<const int*>(value);
+                        if(compareInt(intVal1, intVal2, compOp)) good = true;
+                        break;
+                    case TypeReal:
+                        float floatVal1, floatVal2;
+                        floatVal1 = *reinterpret_cast<float*>(data);
+                        floatVal2 = *reinterpret_cast<const float*>(value);
+                        if(compareFloat(floatVal1, floatVal2, compOp)) good = true;
+                        break;
+                    case TypeVarChar:
+                        int length;
+                        memmove(&length, (char *)value, sizeof(int));
+                        std::string strVal1, strVal2;
+                        strVal1 = *reinterpret_cast<char*>(data);
+                        strVal2.resize(length);
+                        memmove(&strVal2[0], (char *)value + sizeof(int), length);
+                        if(compareString(strVal1, strVal2, compOp)) good = true;
+                        break;
+                }
+
+                if(good){
+                    rbfm_ScanIterator.candidates.push_back(rid);
+                }
+            }
+
+            currentPage += 1;
+        }
+
+        return 0;
     }
 } // namespace PeterDB
 
