@@ -381,7 +381,7 @@ namespace PeterDB {
         }
 
         // get null flags
-        int indicatorSize = getNullIndicatorSize(recordDescriptor.size());
+        int indicatorSize = getNullIndicatorSize((int)recordDescriptor.size());
         int isNull = getSpecificAttrNullFlag(record, indicatorSize, numOfAttr);
 
         if(isNull){
@@ -390,17 +390,11 @@ namespace PeterDB {
         else{
             short startPos, endPos;
 
-            startPos = getSpecificAttrOffset(record, indicatorSize, recordDescriptor.size(), numOfAttr - 1);
-            endPos = getSpecificAttrOffset(record, indicatorSize, recordDescriptor.size(), numOfAttr);
+            startPos = getSpecificAttrOffset(record, indicatorSize, (int)recordDescriptor.size(), numOfAttr - 1);
+            endPos = getSpecificAttrOffset(record, indicatorSize, (int)recordDescriptor.size(), numOfAttr);
 
-            if (targetAttr.type == PeterDB::TypeVarChar){
-                int length;
-                memmove(&length, record + startPos, sizeof(int));
-                memmove(data, record + startPos + sizeof(int), length);
-            }
-            else{
-                memmove(data, record + startPos, endPos - startPos);
-            }
+            memmove(data, record + startPos, endPos - startPos);
+
         }
 
         return 0;
@@ -462,6 +456,60 @@ namespace PeterDB {
             currentPage += 1;
         }
 
+        rbfm_ScanIterator.fileHandle = fileHandle;
+        rbfm_ScanIterator.projectedAttributes = attributeNames;
+        rbfm_ScanIterator.recordDescriptor = recordDescriptor;
+        rbfm_ScanIterator.attributeMap = attributeMap;
+
+        return 0;
+    }
+
+    RC RBFM_ScanIterator::getNextRecord(RID &rid, void *data){
+        // Check if we've reached the end of the candidates vector
+        if (currentIndex >= candidates.size()) {
+            return RBFM_EOF;
+        }
+        rid = candidates[currentIndex];
+        int nullFieldsIndicatorActualSize = getNullIndicatorSize((int) recordDescriptor.size());
+        auto indicator = new unsigned char[nullFieldsIndicatorActualSize];
+        memset(indicator, 0, nullFieldsIndicatorActualSize);
+
+        // processing the data (go through each projected attribute)
+        int offset = 0;
+        for(int i = 0; i < projectedAttributes.size(); i++){
+            std::string s = projectedAttributes[i];
+            void* getValue = malloc(attributeMap[s].length);
+            RecordBasedFileManager::instance().readAttribute(fileHandle, recordDescriptor, rid, s, getValue);
+
+            if(getValue == nullptr){
+                setSpecificAttrNullFlag(indicator, i + 1);
+            }
+            else{
+                if(attributeMap[s].type == TypeVarChar){
+                    int length;
+                    memmove(&length, getValue, sizeof(int));
+                    memmove((char *)data + offset, getValue, 4 + length);
+                    offset += (4 + length);
+                }
+                else{
+                    memmove((char *)data + offset, getValue, 4);
+                    offset += 4;
+                }
+            }
+            free(getValue);
+        }
+
+        memmove((char *) data + nullFieldsIndicatorActualSize, data, offset);
+        memmove((char *)data, indicator, nullFieldsIndicatorActualSize);
+
+
+        currentIndex++; // Move to the next candidate
+        return 0; // Assuming 0 is the success code
+    }
+
+    RC RBFM_ScanIterator::close() {
+        currentIndex = 0;
+        candidates.clear();
         return 0;
     }
 } // namespace PeterDB

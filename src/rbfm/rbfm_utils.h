@@ -24,6 +24,16 @@ int getSpecificAttrNullFlag(const char* record, int indicatorSize, int target){
     return indicator[target / 8] & (1 << (7 - target % 8));
 }
 
+void setSpecificAttrNullFlag(unsigned char* indicator, int fieldIndex){
+    // Calculate the byte and bit position of fieldIndex
+    fieldIndex -= 1;
+    int byteIndex = fieldIndex / 8;
+    int bitPosition = fieldIndex % 8;
+
+    // Set the bit at bitPosition in indicator[byteIndex]
+    indicator[byteIndex] |= (1 << bitPosition);
+}
+
 short getSpecificAttrOffset(const char* record, int indicatorSize, int fields, int targetAttr){
     if (targetAttr == 0){
         return sizeof(PeterDB::RID) + indicatorSize + fields * sizeof(short);
@@ -385,50 +395,5 @@ std::unordered_map<std::string, PeterDB::Attribute> convertRecordDescriptor(cons
     }
 
     return attributeMap;
-}
-
-//--------------------no use function-----------------------//
-void insertNewSlotDirectory(char* page, int16_t newFreeSpace_, int16_t newSlotNum_, int16_t newRecordOff_, int16_t newRecordSize_){
-    int offset = PAGE_SIZE - 2;
-    int16_t newFreeSpace = newFreeSpace_, newSlotNum = newSlotNum_, newRecordOff = newRecordOff_, newRecordSize = newRecordSize_;
-
-    memmove(page + offset, &newFreeSpace, sizeof(newFreeSpace));
-    offset -= 2;
-
-    memmove(page + offset, &newSlotNum, sizeof(newSlotNum));
-    offset -= (newSlotNum * SLOT_DIR_SIZE);
-
-    memmove(page + offset, &newRecordOff, sizeof(newRecordOff));
-    offset += 2;
-
-    memmove(page + offset, &newRecordSize, sizeof(newRecordSize));
-}
-
-std::vector<int16_t> getDirInfo(const char* page, short recordNum){
-    int16_t freeSpace, slotNum, recordOffset, recordLen;
-    int offset = PAGE_SIZE - 2;
-
-    memmove(&freeSpace, page + offset, sizeof(freeSpace));
-    offset -= 2;
-
-    if(recordNum == -1){ // recordNum = -1 -> find the last
-        memmove(&slotNum, page + offset, sizeof(slotNum));
-    }
-    else{ // get specific slot
-        slotNum = recordNum;
-    }
-    offset -= (slotNum * SLOT_DIR_SIZE);
-
-    if(slotNum == 0){
-        recordLen = 0;
-        recordOffset = 0;
-    }
-    else{
-        memmove(&recordOffset, page + offset, sizeof(recordOffset));
-        memmove(&recordLen, page + offset + 2, sizeof(recordLen));
-    }
-    std::vector<int16_t> info = {freeSpace, slotNum, recordOffset, recordLen};
-
-    return info;
 }
 #endif //PETERDB_RBFM_UTILS_H
