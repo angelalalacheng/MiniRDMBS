@@ -133,13 +133,4 @@ std::vector<PeterDB::Attribute> getColumnsAttr(){
 
     return attrs;
 }
-
-int insertNewTableToTables(const std::string &tableName, const std::string &fileName){
-    // scan to get the recent id
-    // set id + 1
-}
-
-void insertNewAttrsToColumns(const std::vector<PeterDB::Attribute> &attrs){
-    int position = 0;
-}
 #endif //PETERDB_RM_UTILS_H

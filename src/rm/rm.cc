@@ -64,7 +64,47 @@ namespace PeterDB {
     }
 
     RC RelationManager::deleteTable(const std::string &tableName) {
-        return -1;
+        std::vector<Attribute> attrs;
+        getAttributes("Tables", attrs);
+
+        int tableNameLen = tableName.length();
+        void *value = malloc(sizeof(int) + tableNameLen);
+        memmove((char *) value, &tableNameLen, sizeof(int));
+        memmove((char *) value + sizeof(int), &tableName[0], tableNameLen);
+
+        std::vector<std::string> projectedAttr = {"table-id"};
+
+        RBFM_ScanIterator rbfmScanIterator;
+        RecordBasedFileManager::instance().scan(getFileHandle["Tables"], attrs, "table-name", EQ_OP, value, projectedAttr, rbfmScanIterator);
+
+        RID tableRid;
+        void* data = malloc(sizeof(int));
+        int tableId;
+        while(rbfmScanIterator.getNextRecord(tableRid, data) != RBFM_EOF){
+            memmove(&tableId, data, sizeof(int));
+        }
+        free(data);
+        free(value);
+
+        RecordBasedFileManager::instance().deleteRecord(getFileHandle["Tables"], attrs, tableRid);
+        rbfmScanIterator.close();
+
+        void *value2 = malloc(sizeof(int));
+        memmove(value2, &tableId, sizeof(int));
+        std::vector<std::string> projectedAttr2 = {"column-type"};
+        getAttributes("Columns", attrs);
+
+        RecordBasedFileManager::instance().scan(getFileHandle["Columns"], attrs, "table-id", EQ_OP, value2, projectedAttr2, rbfmScanIterator);
+
+        RID columnRid;
+        void* data2 = malloc(sizeof(int));
+        while(rbfmScanIterator.getNextRecord(columnRid, data2) != RBFM_EOF){
+            RecordBasedFileManager::instance().deleteRecord(getFileHandle["Columns"], attrs, columnRid);
+        }
+
+        RecordBasedFileManager::instance().destroyFile(tableName + ".tbl");
+
+        return 0;
     }
 
     RC RelationManager::getAttributes(const std::string &tableName, std::vector<Attribute> &attrs) {
@@ -80,7 +120,7 @@ namespace PeterDB {
         RID rid;
         Attribute attr;
         void* data = malloc(200);
-        while(rbfmScanIterator.getNextRecord(rid, data) != RM_EOF){
+        while(rbfmScanIterator.getNextRecord(rid, data) != RBFM_EOF){
             int len, type, nameLen;
             std::string name;
             int offset = 1;
@@ -101,7 +141,9 @@ namespace PeterDB {
 
             attrs.push_back(attr);
         }
-        return -1;
+
+        free(value);
+        return 0;
     }
 
     RC RelationManager::insertTuple(const std::string &tableName, const void *data, RID &rid) {
