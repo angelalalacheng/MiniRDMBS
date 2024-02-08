@@ -3,7 +3,7 @@
 
 #include <string>
 #include <vector>
-
+#include <unordered_map>
 #include "src/include/rbfm.h"
 
 namespace PeterDB {
@@ -15,6 +15,8 @@ namespace PeterDB {
         RM_ScanIterator();
 
         ~RM_ScanIterator();
+
+        RBFM_ScanIterator rbfm_ScanIterator;
 
         // "data" follows the same format as RelationManager::insertTuple()
         RC getNextTuple(RID &rid, void *data);
@@ -36,6 +38,8 @@ namespace PeterDB {
     // Relation Manager
     class RelationManager {
     public:
+        std::unordered_map<std::string, FileHandle> getFileHandle;
+
         static RelationManager &instance();
 
         RC createCatalog();
