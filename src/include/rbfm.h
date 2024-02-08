@@ -69,12 +69,19 @@ namespace PeterDB {
 
         ~RBFM_ScanIterator() = default;;
 
+        FileHandle fileHandle;
+        std::vector<Attribute> recordDescriptor;
+        std::unordered_map<std::string, Attribute> attributeMap;
+        std::vector<std::string> projectedAttributes;
+        std::vector<RID> candidates;
+        size_t currentIndex = 0;
+
         // Never keep the results in the memory. When getNextRecord() is called,
         // a satisfying record needs to be fetched from the file.
         // "data" follows the same format as RecordBasedFileManager::insertRecord().
-        RC getNextRecord(RID &rid, void *data) { return RBFM_EOF; };
+        RC getNextRecord(RID &rid, void *data);
 
-        RC close() { return -1; };
+        RC close();
     };
 
     class RecordBasedFileManager {
