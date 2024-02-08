@@ -74,13 +74,13 @@ namespace PeterDB {
         memmove((char *) value, &tableNameLen, sizeof(int));
         memmove((char *) value + sizeof(int), &tableName[0], tableNameLen);
 
-        RM_ScanIterator rmScanIterator;
-        scan(tableName, "table-name", EQ_OP, value, projectedAttrs, rmScanIterator);
+        RBFM_ScanIterator rbfmScanIterator;
+        RecordBasedFileManager::instance().scan(tableName, "table-name", EQ_OP, value, projectedAttrs, rbfmScanIterator);
 
         RID rid;
         Attribute attr;
         void* data = malloc(200);
-        while(rmScanIterator.getNextTuple(rid, data) != RM_EOF){
+        while(rbfmScanIterator.getNextRecord(rid, data) != RM_EOF){
             int len, type, nameLen;
             std::string name;
             int offset = 1;
