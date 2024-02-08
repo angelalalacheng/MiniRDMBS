@@ -108,14 +108,22 @@ namespace PeterDB {
     }
 
     RC RelationManager::getAttributes(const std::string &tableName, std::vector<Attribute> &attrs) {
-        std::vector<std::string> projectedAttrs = {"column-name", "column-type", "column-length"};
+        std::vector<std::string> projectedAttrs1 = {"table-id"};
+        std::vector<std::string> projectedAttrs2 = {"column-name", "column-type", "column-length"};
         int tableNameLen = tableName.length();
         void *value = malloc(sizeof(int) + tableNameLen);
         memmove((char *) value, &tableNameLen, sizeof(int));
         memmove((char *) value + sizeof(int), &tableName[0], tableNameLen);
 
         RBFM_ScanIterator rbfmScanIterator;
-        RecordBasedFileManager::instance().scan(tableName, "table-name", EQ_OP, value, projectedAttrs, rbfmScanIterator);
+        RecordBasedFileManager::instance().scan(getFileHandle["Tables"], getTablesAttr(), "table-name", EQ_OP, value, projectedAttrs1, rbfmScanIterator);
+
+        RID tableRid;
+        void *tableId = malloc(sizeof(int));
+        while(rbfmScanIterator.getNextRecord(tableRid, tableId) != RBFM_EOF){}
+        rbfmScanIterator.close();
+
+        RecordBasedFileManager::instance().scan(getFileHandle["Columns"], getColumnsAttr(), "table-id", EQ_OP, tableId, projectedAttrs2, rbfmScanIterator);
 
         RID rid;
         Attribute attr;
@@ -142,7 +150,10 @@ namespace PeterDB {
             attrs.push_back(attr);
         }
 
+        rbfmScanIterator.close();
         free(value);
+        free(tableId);
+        free(data);
         return 0;
     }
 
