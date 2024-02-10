@@ -297,7 +297,6 @@ bool compareInt(const int &value1, const int &value2, PeterDB::CompOp operation)
         case PeterDB::NE_OP:
             return value1 != value2;
         case PeterDB::NO_OP:
-            // 在NO_OP情况下，你可能想要特殊处理，例如总是返回true或false
             return true;
         default:
             std::cerr << "Unknown comparison operator." << std::endl;
@@ -390,7 +389,7 @@ char* getRecordFromRID(PeterDB::FileHandle &fileHandle, PeterDB::RID rid, short 
 std::unordered_map<std::string, PeterDB::Attribute> convertRecordDescriptor(const std::vector<PeterDB::Attribute> &recordDescriptor){
     std::unordered_map<std::string, PeterDB::Attribute> attributeMap;
 
-    for(PeterDB::Attribute attr: recordDescriptor){
+    for(const PeterDB::Attribute& attr: recordDescriptor){
         attributeMap[attr.name] = attr;
     }
 

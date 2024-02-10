@@ -165,6 +165,8 @@ namespace PeterDB {
 
         memmove((char *)data, buffer + targetRecord.offset + sizeof(RID), indicatorSize);
         memmove((char *)data + indicatorSize, buffer + targetRecord.offset + metaSize, targetRecord.len - metaSize);
+        std::stringstream stream;
+        printRecord(recordDescriptor, data, stream);
         return 0;
     }
 
@@ -264,7 +266,7 @@ namespace PeterDB {
         }
         output.pop_back();
         output.pop_back();
-
+        std::cout << output <<std::endl;
         out<< output;
 
         return 0;
@@ -364,7 +366,10 @@ namespace PeterDB {
         fileHandle.readPage(targetRID.pageNum, buffer);
         std::vector<short> pageInfo = getPageInfo(buffer);
         SlotInfo targetRecord = getSlotInfo(buffer, pageInfo[1], targetRID.slotNum);
-
+        if(targetRecord.offset == -1) {
+            data = nullptr;
+            return -1;
+        }
         // get the target record
         char record[targetRecord.len];
         memmove(record, buffer + targetRecord.offset, targetRecord.len);
@@ -409,9 +414,6 @@ namespace PeterDB {
 
         Attribute compareAttr = attributeMap[conditionAttribute];
 
-        char data[compareAttr.length + 4];
-        memset(data, 0, compareAttr.length + 4);
-
         PageNum currentPage = 0;
         char buffer[PAGE_SIZE];
         std::vector<short> pageInfo;
@@ -420,6 +422,9 @@ namespace PeterDB {
             fileHandle.readPage(currentPage, buffer);
             pageInfo = getPageInfo(buffer);
             for(int i = 1; i <= pageInfo[1]; i++){
+                void *data = malloc(compareAttr.length + 4);
+                memset(data, 0, compareAttr.length + 4);
+
                 rid.pageNum = currentPage;
                 rid.slotNum = i;
                 readAttribute(fileHandle, recordDescriptor, rid, conditionAttribute, data);
@@ -427,23 +432,28 @@ namespace PeterDB {
                 switch(compareAttr.type){
                     case TypeInt:
                         int intVal1, intVal2;
+                        if(!data) break;
                         intVal1 = *reinterpret_cast<int*>(data);
-                        intVal2 =  *reinterpret_cast<const int*>(value);
+                        intVal2 = value == nullptr? -1 : *reinterpret_cast<const int*>(value); // No condition
                         if(compareInt(intVal1, intVal2, compOp)) good = true;
                         break;
                     case TypeReal:
                         float floatVal1, floatVal2;
+                        if(!data) break;
                         floatVal1 = *reinterpret_cast<float*>(data);
-                        floatVal2 = *reinterpret_cast<const float*>(value);
+                        floatVal2 = value == nullptr? -1.0 : *reinterpret_cast<const float*>(value); // No condition
                         if(compareFloat(floatVal1, floatVal2, compOp)) good = true;
                         break;
                     case TypeVarChar:
-                        int length;
-                        memmove(&length, (char *)value, sizeof(int));
+                        int length1, length2;
+                        if(!data) break;
+                        memmove(&length1, (char *)data, sizeof(int));
+                        memmove(&length2, (char *)value, sizeof(int));
                         std::string strVal1, strVal2;
-                        strVal1 = *reinterpret_cast<char*>(data);
-                        strVal2.resize(length);
-                        memmove(&strVal2[0], (char *)value + sizeof(int), length);
+                        strVal1.resize(length1);
+                        memmove(&strVal1[0], (char *)data + sizeof(int), length1);
+                        strVal2.resize(length2);
+                        memmove(&strVal2[0], (char *)value + sizeof(int), length2);
                         if(compareString(strVal1, strVal2, compOp)) good = true;
                         break;
                 }
@@ -451,6 +461,7 @@ namespace PeterDB {
                 if(good){
                     rbfm_ScanIterator.candidates.push_back(rid);
                 }
+                free(data);
             }
 
             currentPage += 1;
@@ -470,7 +481,7 @@ namespace PeterDB {
             return RBFM_EOF;
         }
         rid = candidates[currentIndex];
-        int nullFieldsIndicatorActualSize = getNullIndicatorSize((int) recordDescriptor.size());
+        int nullFieldsIndicatorActualSize = getNullIndicatorSize((int) projectedAttributes.size());
         auto indicator = new unsigned char[nullFieldsIndicatorActualSize];
         memset(indicator, 0, nullFieldsIndicatorActualSize);
 
