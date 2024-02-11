@@ -38,7 +38,7 @@ namespace PeterDB {
     // Relation Manager
     class RelationManager {
     public:
-        std::unordered_map<std::string, FileHandle> getFileHandle;
+        static std::unordered_map<std::string, FileHandle> getFileHandle;
 
         static RelationManager &instance();
 

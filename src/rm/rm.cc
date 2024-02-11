@@ -1,7 +1,10 @@
 #include "src/include/rm.h"
 #include "rm_utils.h"
+#include <string>
 
 namespace PeterDB {
+    std::unordered_map<std::string, FileHandle> RelationManager::getFileHandle;
+
     RelationManager &RelationManager::instance() {
         static RelationManager _relation_manager = RelationManager();
         return _relation_manager;
@@ -17,46 +20,49 @@ namespace PeterDB {
 
     RC RelationManager::createCatalog() {
         FileHandle fileHandleForTables, fileHandleForColumns;
-        RC createTables = RecordBasedFileManager::instance().createFile("Tables.tbl");
+        RC createTables = RecordBasedFileManager::instance().createFile("Tables");
         if (createTables == -1) return -1;
 
-        RC createColumns = RecordBasedFileManager::instance().createFile("Columns.tbl");
+        RC createColumns = RecordBasedFileManager::instance().createFile("Columns");
         if (createColumns == -1) return -1;
 
 
         std::vector<PeterDB::Attribute> ColumnsAttr = getColumnsAttr();
 
         // use insertRecord
-        RecordBasedFileManager::instance().openFile("Tables.tbl", fileHandleForTables);
-        RecordBasedFileManager::instance().openFile("Columns.tbl", fileHandleForColumns);
+        RecordBasedFileManager::instance().openFile("Tables", fileHandleForTables);
+        RecordBasedFileManager::instance().openFile("Columns", fileHandleForColumns);
         getFileHandle["Tables"] = fileHandleForTables;
         getFileHandle["Columns"] = fileHandleForColumns;
 
         insertTablesCatalogInfo();
         insertColumnsCatalogInfo();
 
-        // close and flush
-//        RecordBasedFileManager::instance().closeFile(fileHandleForTables);
-//        RecordBasedFileManager::instance().closeFile(fileHandleForColumns);
         return 0;
     }
 
     RC RelationManager::deleteCatalog() {
-        RC deleteTables = RecordBasedFileManager::instance().destroyFile("Columns.tbl");
+        if(getFileHandle.find("Tables") == getFileHandle.end() || getFileHandle.find("Columns") == getFileHandle.end()) return -1;
+        RecordBasedFileManager::instance().closeFile(getFileHandle["Tables"]);
+        RecordBasedFileManager::instance().closeFile(getFileHandle["Columns"]);
+
+        RC deleteTables = RecordBasedFileManager::instance().destroyFile("Columns");
         if(deleteTables == -1) return -1;
-        RC deleteColumns = RecordBasedFileManager::instance().destroyFile("Tables.tbl");
+        RC deleteColumns = RecordBasedFileManager::instance().destroyFile("Tables");
         if(deleteColumns == -1) return -1;
+        getFileHandle.erase("Tables");
+        getFileHandle.erase("Columns");
+
 
         return 0;
     }
 
     RC RelationManager::createTable(const std::string &tableName, const std::vector<Attribute> &attrs) {
-        std::cout << "### createTable \n";
+        std::cout << "### createTable: " + tableName <<std::endl;
         FileHandle fileHandle;
         if(getFileHandle.find("Tables") == getFileHandle.end() || getFileHandle.find("Columns") == getFileHandle.end()) return -1;
         RecordBasedFileManager::instance().createFile(tableName);
         RecordBasedFileManager::instance().openFile(tableName, fileHandle);
-//        RecordBasedFileManager::instance().closeFile(fileHandle);
 
         int tableId = insertNewTableIntoTables(tableName, attrs);
         insertNewAttrIntoColumns(tableId, tableName, attrs);
@@ -67,6 +73,9 @@ namespace PeterDB {
     RC RelationManager::deleteTable(const std::string &tableName) {
         std::cout << "### deleteTable \n";
         if(getFileHandle.find(tableName) == getFileHandle.end()) return -1;
+        RecordBasedFileManager::instance().closeFile(getFileHandle[tableName]);
+        RecordBasedFileManager::instance().destroyFile(tableName);
+        getFileHandle.erase(tableName);
 
         int tableNameLen = tableName.length();
         void *value = malloc(sizeof(int) + tableNameLen);
@@ -101,10 +110,6 @@ namespace PeterDB {
         while(rbfmScanIterator.getNextRecord(columnRid, data2) != RBFM_EOF){
             RecordBasedFileManager::instance().deleteRecord(getFileHandle["Columns"], getColumnsAttr(), columnRid);
         }
-
-        getFileHandle.erase(tableName);
-
-        RecordBasedFileManager::instance().destroyFile(tableName);
 
         return 0;
     }
@@ -163,6 +168,8 @@ namespace PeterDB {
     }
 
     RC RelationManager::insertTuple(const std::string &tableName, const void *data, RID &rid) {
+        if(getFileHandle.find(tableName) == getFileHandle.end()) return -1;
+
         std::vector<Attribute> attrs;
         getAttributes(tableName, attrs);
         RecordBasedFileManager::instance().insertRecord(getFileHandle[tableName], attrs, data, rid);
@@ -170,6 +177,8 @@ namespace PeterDB {
     }
 
     RC RelationManager::deleteTuple(const std::string &tableName, const RID &rid) {
+        if(getFileHandle.find(tableName) == getFileHandle.end()) return -1;
+
         std::vector<Attribute> attrs;
         getAttributes(tableName, attrs);
         RecordBasedFileManager::instance().deleteRecord(getFileHandle[tableName], attrs, rid);
@@ -177,6 +186,8 @@ namespace PeterDB {
     }
 
     RC RelationManager::updateTuple(const std::string &tableName, const void *data, const RID &rid) {
+        if(getFileHandle.find(tableName) == getFileHandle.end()) return -1;
+
         std::vector<Attribute> attrs;
         getAttributes(tableName, attrs);
         RecordBasedFileManager::instance().updateRecord(getFileHandle[tableName], attrs, data, rid);
@@ -184,6 +195,11 @@ namespace PeterDB {
     }
 
     RC RelationManager::readTuple(const std::string &tableName, const RID &rid, void *data) {
+        if(getFileHandle.find(tableName) == getFileHandle.end()) return -1;
+//        FileHandle fileHandle;
+//        RC openResult = RecordBasedFileManager::instance().openFile(tableName, fileHandle);
+//        if(openResult == -1) return -1;
+
         std::vector<Attribute> attrs;
         getAttributes(tableName, attrs);
         RC readResult = RecordBasedFileManager::instance().readRecord(getFileHandle[tableName], attrs, rid, data);
@@ -223,6 +239,7 @@ namespace PeterDB {
                              const void *value,
                              const std::vector<std::string> &attributeNames,
                              RM_ScanIterator &rm_ScanIterator) {
+        if(getFileHandle.find(tableName) == getFileHandle.end()) return -1;
 
         std::vector<Attribute> attrs;
         getAttributes(tableName, attrs);

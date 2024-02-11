@@ -167,6 +167,7 @@ namespace PeterDB {
         memmove((char *)data + indicatorSize, buffer + targetRecord.offset + metaSize, targetRecord.len - metaSize);
         std::stringstream stream;
         printRecord(recordDescriptor, data, stream);
+
         return 0;
     }
 
@@ -418,11 +419,11 @@ namespace PeterDB {
         char buffer[PAGE_SIZE];
         std::vector<short> pageInfo;
         RID rid;
+        void *data = malloc(compareAttr.length + 4);
         while(currentPage < fileHandle.getNumberOfPages()){
             fileHandle.readPage(currentPage, buffer);
             pageInfo = getPageInfo(buffer);
             for(int i = 1; i <= pageInfo[1]; i++){
-                void *data = malloc(compareAttr.length + 4);
                 memset(data, 0, compareAttr.length + 4);
 
                 rid.pageNum = currentPage;
@@ -461,7 +462,6 @@ namespace PeterDB {
                 if(good){
                     rbfm_ScanIterator.candidates.push_back(rid);
                 }
-                free(data);
             }
 
             currentPage += 1;
@@ -471,6 +471,7 @@ namespace PeterDB {
         rbfm_ScanIterator.projectedAttributes = attributeNames;
         rbfm_ScanIterator.recordDescriptor = recordDescriptor;
         rbfm_ScanIterator.attributeMap = attributeMap;
+        free(data);
 
         return 0;
     }
@@ -487,9 +488,10 @@ namespace PeterDB {
 
         // processing the data (go through each projected attribute)
         int offset = 0;
+        void* getValue = malloc(200);
+
         for(int i = 0; i < projectedAttributes.size(); i++){
             std::string s = projectedAttributes[i];
-            void* getValue = malloc(attributeMap[s].length);
             RecordBasedFileManager::instance().readAttribute(fileHandle, recordDescriptor, rid, s, getValue);
 
             if(getValue == nullptr){
@@ -507,12 +509,12 @@ namespace PeterDB {
                     offset += 4;
                 }
             }
-            free(getValue);
+            memset(getValue, 0, 200);
         }
 
         memmove((char *) data + nullFieldsIndicatorActualSize, data, offset);
         memmove((char *)data, indicator, nullFieldsIndicatorActualSize);
-
+        free(getValue);
 
         currentIndex++; // Move to the next candidate
         return 0; // Assuming 0 is the success code

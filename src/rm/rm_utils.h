@@ -83,7 +83,7 @@ void insertTablesCatalogInfo(){
 
     std::vector<int> tableID = {1, 2};
     std::vector<std::string> tableName = {"Tables", "Columns"};
-    std::vector<std::string> fileName = {"Tables.tbl", "Columns.tbl"};
+    std::vector<std::string> fileName = {"Tables", "Columns"};
 
     for(int i = 0; i < tableName.size(); i++){
         unsigned offset = 0;
