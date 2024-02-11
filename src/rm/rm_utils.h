@@ -70,7 +70,7 @@ std::vector<PeterDB::Attribute> getColumnsAttr(){
     return attrs;
 }
 
-void insertTablesCatalogInfo(){
+void insertTablesCatalogInfo(PeterDB::FileHandle &fileHandle){
     unsigned char* nullIndicator = getNullIndicator();
     PeterDB::RID rid;
 
@@ -106,11 +106,11 @@ void insertTablesCatalogInfo(){
         memmove(data + offset, &fileName[i][0], fileNameLen);
         offset += fileNameLen;
 
-        PeterDB::RecordBasedFileManager::instance().insertRecord(PeterDB::RelationManager::instance().getFileHandle["Tables"], getTablesAttr(), data, rid);
+        PeterDB::RecordBasedFileManager::instance().insertRecord(fileHandle, getTablesAttr(), data, rid);
     }
 }
 
-void insertColumnsCatalogInfo() {
+void insertColumnsCatalogInfo(PeterDB::FileHandle &fileHandle) {
     unsigned char* nullIndicator = getNullIndicator();
     PeterDB::RID rid;
 //    std::string ColumnsHeading = "table-id:int, column-name:varchar(50), column-type:int, column-length:int, column-position:int";
@@ -143,13 +143,13 @@ void insertColumnsCatalogInfo() {
         memmove(data + offset, &columnPosition[i], sizeof(int));
         offset += sizeof(int);
 
-        PeterDB::RecordBasedFileManager::instance().insertRecord(PeterDB::RelationManager::instance().getFileHandle["Columns"], getColumnsAttr(), data, rid);
+        PeterDB::RecordBasedFileManager::instance().insertRecord(fileHandle, getColumnsAttr(), data, rid);
     }
 }
 
-int insertNewTableIntoTables(const std::string &tableName, const std::vector<PeterDB::Attribute> &attrs){
+int insertNewTableIntoTables(PeterDB::FileHandle &fileHandle, const std::string &tableName, const std::vector<PeterDB::Attribute> &attrs){
     PeterDB::RBFM_ScanIterator rbfm_ScanIterator;
-    PeterDB::RecordBasedFileManager::instance().scan(PeterDB::RelationManager::instance().getFileHandle["Tables"], getTablesAttr(), "table-id", PeterDB::NO_OP,
+    PeterDB::RecordBasedFileManager::instance().scan(fileHandle, getTablesAttr(), "table-id", PeterDB::NO_OP,
                                                      nullptr, {"table-id"}, rbfm_ScanIterator);
     int nullIndicatorSize = 1;
     PeterDB::RID rid;
@@ -185,13 +185,13 @@ int insertNewTableIntoTables(const std::string &tableName, const std::vector<Pet
     memmove((char *) record + offset, &fileName[0], fileNameLen);
     offset += fileNameLen;
 
-    PeterDB::RecordBasedFileManager::instance().insertRecord(PeterDB::RelationManager::instance().getFileHandle["Tables"], getTablesAttr(), record, rid);
+    PeterDB::RecordBasedFileManager::instance().insertRecord(fileHandle, getTablesAttr(), record, rid);
     free(data);
     free(record);
     return maxId;
 }
 
-void insertNewAttrIntoColumns(const int tableId, const std::string &tableName, const std::vector<PeterDB::Attribute> &attrs){
+void insertNewAttrIntoColumns(PeterDB::FileHandle &fileHandle, const int tableId, const std::string &tableName, const std::vector<PeterDB::Attribute> &attrs){
     unsigned char* nullIndicator = getNullIndicator();
     int columnPosition = 1;
 
@@ -221,9 +221,7 @@ void insertNewAttrIntoColumns(const int tableId, const std::string &tableName, c
 
         columnPosition += 1;
 
-        PeterDB::RecordBasedFileManager::instance().insertRecord(PeterDB::RelationManager::instance().getFileHandle["Columns"], getColumnsAttr(), data, rid);
-
-        std::cout<<"new col: " <<rid.slotNum <<std::endl;
+        PeterDB::RecordBasedFileManager::instance().insertRecord(fileHandle, getColumnsAttr(), data, rid);
     }
 }
 

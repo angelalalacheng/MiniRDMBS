@@ -38,9 +38,11 @@ namespace PeterDB {
     // Relation Manager
     class RelationManager {
     public:
-        static std::unordered_map<std::string, FileHandle> getFileHandle;
-
         static RelationManager &instance();
+
+        static RC getFileHandle(const std::string& fileName, FileHandle& fileHandle);
+
+        static RC closeAndRemoveFileHandle(const std::string& fileName);
 
         RC createCatalog();
 
@@ -99,6 +101,7 @@ namespace PeterDB {
         ~RelationManager();                                                 // Prevent unwanted destruction
         RelationManager(const RelationManager &);                           // Prevent construction by copying
         RelationManager &operator=(const RelationManager &);                // Prevent assignment
+        static std::unordered_map<std::string, FileHandle> fileHandleCache;
 
     };
 
