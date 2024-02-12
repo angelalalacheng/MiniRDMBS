@@ -107,6 +107,7 @@ void insertTablesCatalogInfo(PeterDB::FileHandle &fileHandle){
         offset += fileNameLen;
 
         PeterDB::RecordBasedFileManager::instance().insertRecord(fileHandle, getTablesAttr(), data, rid);
+        fileHandle.openFileStream->flush();
     }
 }
 
@@ -144,6 +145,7 @@ void insertColumnsCatalogInfo(PeterDB::FileHandle &fileHandle) {
         offset += sizeof(int);
 
         PeterDB::RecordBasedFileManager::instance().insertRecord(fileHandle, getColumnsAttr(), data, rid);
+        fileHandle.openFileStream->flush();
     }
 }
 

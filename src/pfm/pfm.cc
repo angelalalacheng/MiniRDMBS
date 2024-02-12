@@ -19,8 +19,6 @@ namespace PeterDB {
     PagedFileManager &PagedFileManager::operator=(const PagedFileManager &) = default;
 
     RC PagedFileManager::createFile(const std::string &fileName) {
-        std::cout << "PFM: createFile \n";
-
         // File already exists, return an error code
         std::ifstream check(fileName);
         if (check.good()) {
@@ -53,7 +51,6 @@ namespace PeterDB {
 
     RC PagedFileManager::destroyFile(const std::string &fileName) {
         // File not exists, return an error code
-        std::cout << "PFM: destroy \n";
         std::ifstream check(fileName);
         if (!check.good()) {
             check.close();
@@ -70,8 +67,6 @@ namespace PeterDB {
     }
 
     RC PagedFileManager::openFile(const std::string &fileName, FileHandle &fileHandle) {
-        std::cout << "PFM: openFile \n";
-
         // File not exists, return an error code
         std::shared_ptr<std::fstream> filestream = std::make_shared<std::fstream>(fileName, std::ios::in | std::ios::out | std::ios::binary);
         if (!filestream->good()) {
@@ -98,13 +93,10 @@ namespace PeterDB {
         fileHandle.appendPageCounter = a;
         fileHandle.pageFileName = fileName;
         fileHandle.openFileStream = filestream;
-
         return 0;
     }
 
     RC PagedFileManager::closeFile(FileHandle &fileHandle) {
-        std::cout << "PFM: close \n";
-
         fileHandle.openFileStream->seekp(0, std::ios::beg);
 
         unsigned r = fileHandle.readPageCounter, w = fileHandle.writePageCounter, a = fileHandle.appendPageCounter;

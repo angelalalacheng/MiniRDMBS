@@ -1,6 +1,7 @@
 #include "src/include/rm.h"
 #include "rm_utils.h"
 #include <string>
+#include <cstring>
 
 namespace PeterDB {
     std::unordered_map<std::string, FileHandle> RelationManager::fileHandleCache;
@@ -68,11 +69,18 @@ namespace PeterDB {
         insertTablesCatalogInfo(fileHandleForTables);
         insertColumnsCatalogInfo(fileHandleForColumns);
 
+        fileHandleCache["Tables"] = fileHandleForTables;
+        fileHandleCache["Columns"] = fileHandleForColumns;
+
         return 0;
     }
 
     RC RelationManager::deleteCatalog() {
         std::cout << "### deleteCatalog"<< std::endl;
+        FileHandle fileHandleForTables, fileHandleForColumns;
+        if (getFileHandle("Tables", fileHandleForTables) != 0 || getFileHandle("Columns", fileHandleForColumns) != 0) {
+            return -1;
+        }
         if(fileHandleCache.find("Tables") == fileHandleCache.end() || fileHandleCache.find("Columns") == fileHandleCache.end()) return -1;
 
         if (closeAndRemoveFileHandle("Tables") != 0 || closeAndRemoveFileHandle("Columns") != 0) {
@@ -89,7 +97,8 @@ namespace PeterDB {
     }
 
     RC RelationManager::createTable(const std::string &tableName, const std::vector<Attribute> &attrs) {
-        std::cout << "### createTable: " + tableName <<std::endl;
+//        std::cout << "### createTable: " + tableName <<std::endl;
+        if(tableName == "Tables" || tableName == "Columns") return -1;
         FileHandle fileHandleForTables, fileHandleForColumns;
         if (getFileHandle("Tables", fileHandleForTables) != 0 || getFileHandle("Columns", fileHandleForColumns) != 0) {
             return -1;
@@ -107,11 +116,20 @@ namespace PeterDB {
         int tableId = insertNewTableIntoTables(fileHandleForTables, tableName, attrs);
         insertNewAttrIntoColumns(fileHandleForColumns, tableId, tableName, attrs);
 
+        fileHandleCache["Tables"] = fileHandleForTables;
+        fileHandleCache["Columns"] = fileHandleForColumns;
+        fileHandleCache[tableName] = fileHandle;
+
         return 0;
     }
 
     RC RelationManager::deleteTable(const std::string &tableName) {
-        std::cout << "### deleteTable: " + tableName << std::endl;
+//        std::cout << "### deleteTable: " + tableName << std::endl;
+        if(tableName == "Tables" || tableName == "Columns") return -1;
+        FileHandle fileHandle;
+        if (getFileHandle(tableName, fileHandle) != 0) {
+            return -1;
+        }
         if(fileHandleCache.find(tableName) == fileHandleCache.end()) return -1;
         if (closeAndRemoveFileHandle(tableName) != 0) {
             return -1;
@@ -156,6 +174,9 @@ namespace PeterDB {
         while(rbfmScanIterator.getNextRecord(columnRid, data2) != RBFM_EOF){
             RecordBasedFileManager::instance().deleteRecord(fileHandleForColumns, getColumnsAttr(), columnRid);
         }
+
+        fileHandleCache["Tables"] = fileHandleForTables;
+        fileHandleCache["Columns"] = fileHandleForColumns;
 
         return 0;
     }
@@ -215,10 +236,23 @@ namespace PeterDB {
         free(value);
         free(table);
         free(data);
+
+//        fileHandleCache["Tables"] = fileHandleForTables;
+//        fileHandleCache["Columns"] = fileHandleForColumns;
+
+        if (closeAndRemoveFileHandle("Tables") != 0) {
+            return -1;
+        }
+        if (closeAndRemoveFileHandle("Columns") != 0) {
+            return -1;
+        }
+
         return 0;
     }
 
     RC RelationManager::insertTuple(const std::string &tableName, const void *data, RID &rid) {
+        if(tableName == "Tables" || tableName == "Columns") return -1;
+
         FileHandle fileHandle;
         if (getFileHandle(tableName, fileHandle) != 0) {
             return -1;
@@ -227,10 +261,20 @@ namespace PeterDB {
         std::vector<Attribute> attrs;
         getAttributes(tableName, attrs);
         RecordBasedFileManager::instance().insertRecord(fileHandle, attrs, data, rid);
+//        void * readVal = malloc(1000);
+//        std::cout << "insert and read\n";
+//        RecordBasedFileManager::instance().readRecord(fileHandle, attrs, rid, readVal);
+        fileHandleCache[tableName] = fileHandle;
+//        readTuple(tableName, rid, readVal);
+//        if (closeAndRemoveFileHandle(tableName) != 0) {
+//            return -1;
+//        }
         return 0;
     }
 
     RC RelationManager::deleteTuple(const std::string &tableName, const RID &rid) {
+        if(tableName == "Tables" || tableName == "Columns") return -1;
+
         FileHandle fileHandle;
         if (getFileHandle(tableName, fileHandle) != 0) {
             return -1;
@@ -239,10 +283,17 @@ namespace PeterDB {
         std::vector<Attribute> attrs;
         getAttributes(tableName, attrs);
         RecordBasedFileManager::instance().deleteRecord(fileHandle, attrs, rid);
+
+        fileHandleCache[tableName] = fileHandle;
+//        if (closeAndRemoveFileHandle(tableName) != 0) {
+//            return -1;
+//        }
         return 0;
     }
 
     RC RelationManager::updateTuple(const std::string &tableName, const void *data, const RID &rid) {
+        if(tableName == "Tables" || tableName == "Columns") return -1;
+
         FileHandle fileHandle;
         if (getFileHandle(tableName, fileHandle) != 0) {
             return -1;
@@ -251,6 +302,12 @@ namespace PeterDB {
         std::vector<Attribute> attrs;
         getAttributes(tableName, attrs);
         RecordBasedFileManager::instance().updateRecord(fileHandle, attrs, data, rid);
+
+        fileHandleCache[tableName] = fileHandle;
+//        if (closeAndRemoveFileHandle(tableName) != 0) {
+//            return -1;
+//        }
+
         return 0;
     }
 
@@ -259,17 +316,25 @@ namespace PeterDB {
         if (getFileHandle(tableName, fileHandle) != 0) {
             return -1;
         }
-//        FileHandle fileHandle;
-//        RC openResult = RecordBasedFileManager::instance().openFile(tableName, fileHandle);
-//        if(openResult == -1) return -1;
 
         std::vector<Attribute> attrs;
         getAttributes(tableName, attrs);
         RC readResult = RecordBasedFileManager::instance().readRecord(fileHandle, attrs, rid, data);
-
+//        void * val = malloc(50);
+//        RecordBasedFileManager::instance().readAttribute(fileHandle, attrs, rid, "attr0", val);
+//        int len;
+//        memmove(&len, val, 4);
+//        std::string s;
+//        s.resize(len);
+//        memmove(&s[0], (char*)val + 4, len);
         if(readResult == -1){
             return -1;
         }
+
+        fileHandleCache[tableName] = fileHandle;
+//        if (closeAndRemoveFileHandle(tableName) != 0) {
+//            return -1;
+//        }
         return 0;
     }
 
@@ -298,6 +363,9 @@ namespace PeterDB {
 
         memmove((char *) data + 1, data, len);
         memmove(data, indicator, 1);
+
+        fileHandleCache[tableName] = fileHandle;
+
         return 0;
     }
 
@@ -316,6 +384,8 @@ namespace PeterDB {
 
         RecordBasedFileManager::instance().scan(fileHandle, attrs, conditionAttribute, compOp, value, attributeNames, rm_ScanIterator.rbfm_ScanIterator);
 
+        fileHandleCache[tableName] = fileHandle;
+
         return 0;
     }
 
@@ -324,10 +394,10 @@ namespace PeterDB {
     RM_ScanIterator::~RM_ScanIterator() = default;
 
     RC RM_ScanIterator::getNextTuple(RID &rid, void *data) {
-        if(!rbfm_ScanIterator.getNextRecord(rid, data)){
-            return 0;
+        if(rbfm_ScanIterator.getNextRecord(rid, data) == -1){
+            return RM_EOF;
         }
-        return RM_EOF;
+        return 0;
     }
 
     RC RM_ScanIterator::close() {
