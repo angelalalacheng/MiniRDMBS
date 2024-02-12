@@ -76,7 +76,7 @@ namespace PeterDB {
     }
 
     RC RelationManager::deleteCatalog() {
-        std::cout << "### deleteCatalog"<< std::endl;
+//        std::cout << "### deleteCatalog"<< std::endl;
         FileHandle fileHandleForTables, fileHandleForColumns;
         if (getFileHandle("Tables", fileHandleForTables) != 0 || getFileHandle("Columns", fileHandleForColumns) != 0) {
             return -1;
