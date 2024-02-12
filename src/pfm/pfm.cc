@@ -93,7 +93,6 @@ namespace PeterDB {
         fileHandle.appendPageCounter = a;
         fileHandle.pageFileName = fileName;
         fileHandle.openFileStream = filestream;
-
         return 0;
     }
 

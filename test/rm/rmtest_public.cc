@@ -482,6 +482,9 @@ namespace PeterDBTesting {
             size = 0;
             prepareLargeTuple((int) attrs.size(), nullsIndicator, i, inBuffer, size);
             // Compare whether the two memory blocks are the same
+            std::cout << "correct" <<std::endl;
+            std::stringstream stream;
+            rm.printTuple(attrs, inBuffer, stream);
             ASSERT_EQ(memcmp(inBuffer, outBuffer, size), 0) << "the read tuple should match the inserted tuple";
 
         }
@@ -1449,7 +1452,7 @@ namespace PeterDBTesting {
                                     << "Create table " << tableName << " should fail, table should already exist.";
 
     }
-
+    //----------------------------------//
     TEST_F(RM_Version_Test, extra_multiple_add_drop_mix) {
         // Extra Credit Test Case - Functions Tested:
         // 1. Insert tuple

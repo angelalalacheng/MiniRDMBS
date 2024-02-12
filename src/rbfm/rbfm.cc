@@ -165,6 +165,9 @@ namespace PeterDB {
 
         memmove((char *)data, buffer + targetRecord.offset + sizeof(RID), indicatorSize);
         memmove((char *)data + indicatorSize, buffer + targetRecord.offset + metaSize, targetRecord.len - metaSize);
+//        std::stringstream stream;
+//        printRecord(recordDescriptor, data, stream);
+
         return 0;
     }
 
@@ -264,7 +267,7 @@ namespace PeterDB {
         }
         output.pop_back();
         output.pop_back();
-
+//        std::cout << output <<std::endl;
         out<< output;
 
         return 0;
@@ -364,7 +367,10 @@ namespace PeterDB {
         fileHandle.readPage(targetRID.pageNum, buffer);
         std::vector<short> pageInfo = getPageInfo(buffer);
         SlotInfo targetRecord = getSlotInfo(buffer, pageInfo[1], targetRID.slotNum);
-
+        if(targetRecord.offset == -1) {
+            data = nullptr;
+            return -1;
+        }
         // get the target record
         char record[targetRecord.len];
         memmove(record, buffer + targetRecord.offset, targetRecord.len);
@@ -405,47 +411,63 @@ namespace PeterDB {
                                     const std::string &conditionAttribute, const CompOp compOp, const void *value,
                                     const std::vector<std::string> &attributeNames,
                                     RBFM_ScanIterator &rbfm_ScanIterator) {
+        Attribute compareAttr;
         std::unordered_map<std::string, Attribute> attributeMap = convertRecordDescriptor(recordDescriptor);
-
-        Attribute compareAttr = attributeMap[conditionAttribute];
-
-        char data[compareAttr.length + 4];
-        memset(data, 0, compareAttr.length + 4);
+        if(attributeMap.find(conditionAttribute) != attributeMap.end()){
+            compareAttr = attributeMap[conditionAttribute];
+        }
+        else{
+            compareAttr.length = 0;
+        }
 
         PageNum currentPage = 0;
         char buffer[PAGE_SIZE];
         std::vector<short> pageInfo;
         RID rid;
+        void *data = malloc(compareAttr.length + 4);
         while(currentPage < fileHandle.getNumberOfPages()){
             fileHandle.readPage(currentPage, buffer);
             pageInfo = getPageInfo(buffer);
             for(int i = 1; i <= pageInfo[1]; i++){
+                memset(data, 0, compareAttr.length + 4);
+                bool good = false;
+
                 rid.pageNum = currentPage;
                 rid.slotNum = i;
-                readAttribute(fileHandle, recordDescriptor, rid, conditionAttribute, data);
-                bool good = false;
-                switch(compareAttr.type){
-                    case TypeInt:
-                        int intVal1, intVal2;
-                        intVal1 = *reinterpret_cast<int*>(data);
-                        intVal2 =  *reinterpret_cast<const int*>(value);
-                        if(compareInt(intVal1, intVal2, compOp)) good = true;
-                        break;
-                    case TypeReal:
-                        float floatVal1, floatVal2;
-                        floatVal1 = *reinterpret_cast<float*>(data);
-                        floatVal2 = *reinterpret_cast<const float*>(value);
-                        if(compareFloat(floatVal1, floatVal2, compOp)) good = true;
-                        break;
-                    case TypeVarChar:
-                        int length;
-                        memmove(&length, (char *)value, sizeof(int));
-                        std::string strVal1, strVal2;
-                        strVal1 = *reinterpret_cast<char*>(data);
-                        strVal2.resize(length);
-                        memmove(&strVal2[0], (char *)value + sizeof(int), length);
-                        if(compareString(strVal1, strVal2, compOp)) good = true;
-                        break;
+
+                if(conditionAttribute.empty()){
+                    good = true;
+                }
+                else{
+                    readAttribute(fileHandle, recordDescriptor, rid, conditionAttribute, data);
+                    switch(compareAttr.type){
+                        case TypeInt:
+                            int intVal1, intVal2;
+                            if(!data) break;
+                            intVal1 = *reinterpret_cast<int*>(data);
+                            intVal2 = value == nullptr? -1 : *reinterpret_cast<const int*>(value); // No condition
+                            if(compareInt(intVal1, intVal2, compOp)) good = true;
+                            break;
+                        case TypeReal:
+                            float floatVal1, floatVal2;
+                            if(!data) break;
+                            floatVal1 = *reinterpret_cast<float*>(data);
+                            floatVal2 = value == nullptr? -1.0 : *reinterpret_cast<const float*>(value); // No condition
+                            if(compareFloat(floatVal1, floatVal2, compOp)) good = true;
+                            break;
+                        case TypeVarChar:
+                            int length1, length2;
+                            if(!data) break;
+                            memmove(&length1, (char *)data, sizeof(int));
+                            memmove(&length2, (char *)value, sizeof(int));
+                            std::string strVal1, strVal2;
+                            strVal1.resize(length1);
+                            memmove(&strVal1[0], (char *)data + sizeof(int), length1);
+                            strVal2.resize(length2);
+                            memmove(&strVal2[0], (char *)value + sizeof(int), length2);
+                            if(compareString(strVal1, strVal2, compOp)) good = true;
+                            break;
+                    }
                 }
 
                 if(good){
@@ -460,25 +482,27 @@ namespace PeterDB {
         rbfm_ScanIterator.projectedAttributes = attributeNames;
         rbfm_ScanIterator.recordDescriptor = recordDescriptor;
         rbfm_ScanIterator.attributeMap = attributeMap;
+        free(data);
 
         return 0;
     }
 
     RC RBFM_ScanIterator::getNextRecord(RID &rid, void *data){
         // Check if we've reached the end of the candidates vector
-        if (currentIndex >= candidates.size()) {
+        if (currentIndex >= candidates.size() || candidates.empty()) {
             return RBFM_EOF;
         }
         rid = candidates[currentIndex];
-        int nullFieldsIndicatorActualSize = getNullIndicatorSize((int) recordDescriptor.size());
+        int nullFieldsIndicatorActualSize = getNullIndicatorSize((int) projectedAttributes.size());
         auto indicator = new unsigned char[nullFieldsIndicatorActualSize];
         memset(indicator, 0, nullFieldsIndicatorActualSize);
 
         // processing the data (go through each projected attribute)
         int offset = 0;
+        void* getValue = malloc(200);
+
         for(int i = 0; i < projectedAttributes.size(); i++){
             std::string s = projectedAttributes[i];
-            void* getValue = malloc(attributeMap[s].length);
             RecordBasedFileManager::instance().readAttribute(fileHandle, recordDescriptor, rid, s, getValue);
 
             if(getValue == nullptr){
@@ -496,12 +520,12 @@ namespace PeterDB {
                     offset += 4;
                 }
             }
-            free(getValue);
+            memset(getValue, 0, 200);
         }
 
         memmove((char *) data + nullFieldsIndicatorActualSize, data, offset);
         memmove((char *)data, indicator, nullFieldsIndicatorActualSize);
-
+        free(getValue);
 
         currentIndex++; // Move to the next candidate
         return 0; // Assuming 0 is the success code
