@@ -17,6 +17,15 @@ unsigned char* getNullIndicator(){
 
     return indicator;
 }
+void setAttrNullFlag(unsigned char* indicator, int fieldIndex){
+    // Calculate the byte and bit position of fieldIndex
+    fieldIndex -= 1;
+    int byteIndex = fieldIndex / 8;
+    int bitPosition = fieldIndex % 8;
+
+    // Set the bit at bitPosition in indicator[byteIndex]
+    indicator[byteIndex] |= (1 << bitPosition);
+}
 
 std::vector<PeterDB::Attribute> getTablesAttr(){
     PeterDB::Attribute id;
@@ -107,7 +116,7 @@ void insertTablesCatalogInfo(PeterDB::FileHandle &fileHandle){
         offset += fileNameLen;
 
         PeterDB::RecordBasedFileManager::instance().insertRecord(fileHandle, getTablesAttr(), data, rid);
-        fileHandle.openFileStream->flush();
+//        fileHandle.openFileStream->flush();
     }
 }
 
@@ -119,7 +128,7 @@ void insertColumnsCatalogInfo(PeterDB::FileHandle &fileHandle) {
 //    offset += (int)ColumnsHeading.length();
 
     std::vector<int> tableID = {1, 1, 1, 2, 2, 2, 2, 2};
-    std::vector<std::string> columnName = {"table-id", "table-name", "file-name", "table-id", "column-name", "column-type", "column-length", " column-position"};
+    std::vector<std::string> columnName = {"table-id", "table-name", "file-name", "table-id", "column-name", "column-type", "column-length", "column-position"};
     std::vector<int> columnType = {PeterDB::TypeInt, PeterDB::TypeVarChar, PeterDB::TypeVarChar, PeterDB::TypeInt, PeterDB::TypeVarChar, PeterDB::TypeInt, PeterDB::TypeInt, PeterDB::TypeInt};
     std::vector<int> columnLength = {4, 50, 50, 4, 50, 4, 4, 4};
     std::vector<int> columnPosition = {1, 2, 3, 1, 2, 3, 4, 5};
@@ -145,7 +154,7 @@ void insertColumnsCatalogInfo(PeterDB::FileHandle &fileHandle) {
         offset += sizeof(int);
 
         PeterDB::RecordBasedFileManager::instance().insertRecord(fileHandle, getColumnsAttr(), data, rid);
-        fileHandle.openFileStream->flush();
+//        fileHandle.openFileStream->flush();
     }
 }
 

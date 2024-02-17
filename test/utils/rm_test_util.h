@@ -233,7 +233,7 @@ namespace PeterDBTesting {
 
         // Create a large table for pressure test
         void createLargeTable(const std::string &largeTableName) {
-
+            std::cout << "create large table" <<std::endl;
             // 1. Create Table
             std::vector<PeterDB::Attribute> attrs;
 

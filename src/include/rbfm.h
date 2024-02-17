@@ -70,7 +70,7 @@ namespace PeterDB {
 
         ~RBFM_ScanIterator() = default;;
 
-        FileHandle fileHandle;
+        FileHandle *fileHandle;
         std::vector<Attribute> recordDescriptor;
         std::unordered_map<std::string, Attribute> attributeMap;
         std::vector<std::string> projectedAttributes;

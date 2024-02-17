@@ -1,11 +1,11 @@
 #ifndef _pfm_h_
 #define _pfm_h_
 
-#define PAGE_SIZE 4096
+constexpr unsigned PAGE_SIZE = 4096;
 
 #include <string>
 #include <fstream>
-#include <memory>
+#include <vector>
 
 namespace PeterDB {
 
@@ -16,10 +16,10 @@ namespace PeterDB {
 
     class PagedFileManager {
     public:
-        static PagedFileManager &instance();                                // Access to the singleton instance(page is the basic unit)
+        static PagedFileManager &instance();                                // Access to the singleton instance
 
         RC createFile(const std::string &fileName);                         // Create a new file
-        RC destroyFile(const std::string &fiName);                          // Destroy a file
+        RC destroyFile(const std::string &fileName);                        // Destroy a file
         RC openFile(const std::string &fileName, FileHandle &fileHandle);   // Open a file
         RC closeFile(FileHandle &fileHandle);                               // Close a file
 
@@ -34,28 +34,54 @@ namespace PeterDB {
     class FileHandle {
     public:
         // variables to keep the counter for each operation
-        unsigned readPageCounter;
-        unsigned writePageCounter;
-        unsigned appendPageCounter;
-        std::string pageFileName;
-        std::shared_ptr<std::fstream> openFileStream;
-        // add vector to record the free space
+        unsigned readPageCounter = 0;
+        unsigned writePageCounter = 0;
+        unsigned appendPageCounter = 0;
 
-        FileHandle();                                                       // Default constructor
-        ~FileHandle();                                                      // Destructor
+        FileHandle() = default;                                             // Default constructor
+        ~FileHandle() { close(); }                                          // Destructor
 
-        RC readPage(PageNum pageNum, void *data);                           // Get a specific page(pageNum data save to data space)
-        RC writePage(PageNum pageNum, const void *data);                    // Write a specific page(write data to pageNum page)
-        RC appendPage(const void *data);                                    // Append a specific page to the end of file
-        unsigned getNumberOfPages();                                        // Get the number of pages in the file
+        FileHandle(const FileHandle &fileHandle) = delete;
+        FileHandle &operator=(const FileHandle &fileHandle) = delete;
+
+        FileHandle(FileHandle &&fileHandle) noexcept;
+        FileHandle &operator=(FileHandle &&fileHandle) noexcept;
+
+        friend void swap(FileHandle &lhs, FileHandle &rhs);
+
+        RC readPage(PageNum pageNum, void *data);                           // Get a specific page
+        RC writePage(PageNum pageNum, const void *data);                    // Write a specific page
+        RC appendPage(const void *data);                                    // Append a specific page
+        unsigned getNumberOfPages() const;                                        // Get the number of pages in the file
         RC collectCounterValues(unsigned &readPageCount, unsigned &writePageCount,
-                                unsigned &appendPageCount);                 // Put current counter values into variables
+                                unsigned &appendPageCount) const;                 // Put current counter values into variables
+
+        RC open(const std::string &fileName);
+        RC close();
+
+        bool isAvailable() const {
+            return file.is_open();
+        }
+
+        static std::streampos pageOffset(PageNum pageNum);
+        std::vector<size_t> freeSpaces;
+
+    protected:
+        std::fstream file;
+
+#pragma pack(1)
+        struct Metadata {
+            PageNum pageCount = 0;
+            unsigned readPageCounter = 0;
+            unsigned writePageCounter = 0;
+            unsigned appendPageCounter = 0;
+        };
+#pragma pack()
+
+        static constexpr unsigned metadataSize = PAGE_SIZE;
+        PageNum pageCount = 0;
     };
 
 } // namespace PeterDB
 
 #endif // _pfm_h_
-
-// append: need to know size of your file (maintain by yourself in hidden layer)
-// read and write only happened in one page no sequential
-// same content just cover the origin

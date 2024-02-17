@@ -144,15 +144,14 @@ void serializeData(const std::vector<int>& nullFlags, const std::vector<PeterDB:
 }
 
 void initialNewPage(PeterDB::FileHandle &fileHandle){
-    void* dummy = malloc(sizeof(int));
+    char* dummy = static_cast<char *>(malloc(sizeof(int)));
     int16_t freeSpace = PAGE_SIZE - 4, slotNum = 0;
-    fileHandle.openFileStream->seekg(0, std::ios::end);
+
+    *reinterpret_cast<uint16_t*>(dummy + 4092) = slotNum;
+    *reinterpret_cast<uint16_t*>(dummy + 4094) = freeSpace;
+
     fileHandle.appendPage(dummy);
     free(dummy);
-
-    fileHandle.openFileStream->seekp(-4, std::ios::end);
-    fileHandle.openFileStream->write(reinterpret_cast<char*>(&slotNum), sizeof(slotNum));
-    fileHandle.openFileStream->write(reinterpret_cast<char*>(&freeSpace), sizeof(freeSpace));
 }
 
 std::vector<short> getPageInfo(const char* page){
@@ -242,14 +241,14 @@ void updateSlotDirectory(char* page, int totalSlotNum, int target, int delta, in
 
 int checkFreeSpaceOfLastPage(PeterDB::FileHandle &fileHandle, int recordSize) {
     // no pages in file
+    char buffer[PAGE_SIZE];
     if(fileHandle.getNumberOfPages() == 0) {
         initialNewPage(fileHandle);
         return fileHandle.getNumberOfPages() - 1;
     }
     // have pages in file -> check the last page
-    int16_t freeSpace;
-    fileHandle.openFileStream->seekg(-2, std::ios::end);
-    fileHandle.openFileStream->read(reinterpret_cast<char*>(&freeSpace), 2);
+    fileHandle.readPage(fileHandle.getNumberOfPages() - 1, buffer);
+    int16_t freeSpace = *reinterpret_cast<int16_t*>(buffer + 4094);
     if (freeSpace >= recordSize) {
         return fileHandle.getNumberOfPages() - 1;
     }
@@ -260,16 +259,12 @@ int checkFreeSpaceOfLastPage(PeterDB::FileHandle &fileHandle, int recordSize) {
 
 int findFreePageFromFirst(PeterDB::FileHandle &fileHandle, int recordSize) {
     // Skip the hidden page
-    fileHandle.openFileStream->seekg(PAGE_SIZE, std::ios::beg);
+    char buffer[PAGE_SIZE];
 
     int pageNum = 0;
     while (pageNum <= fileHandle.getNumberOfPages() - 1) {
-        int16_t freeSpace = 0;
-        // Move the file pointer to the location of free space information
-        fileHandle.openFileStream->seekg(PAGE_SIZE - 2, std::ios::cur);
-
-        // Read the last two bytes which contain free space information
-        fileHandle.openFileStream->read(reinterpret_cast<char*>(&freeSpace), 2);
+        fileHandle.readPage(fileHandle.getNumberOfPages() - 1, buffer);
+        int16_t freeSpace = *reinterpret_cast<int16_t*>(buffer + 4094);
 
         // Return the page number if free space is sufficient
         if (freeSpace >= recordSize) {
@@ -352,6 +347,7 @@ bool compareString(const std::string& value1, const std::string& value2, PeterDB
 
 PeterDB::RID resolveTombstone(PeterDB::FileHandle &fileHandle, PeterDB::RID rid) {
     char buffer[PAGE_SIZE];
+    memset(buffer, 0, PAGE_SIZE);
     bool isTombstone = true;
     PeterDB::RID currentRID = rid;
 
