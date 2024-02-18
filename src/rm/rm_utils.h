@@ -74,13 +74,6 @@ void insertTablesCatalogInfo(PeterDB::FileHandle &fileHandle){
     unsigned char* nullIndicator = getNullIndicator();
     PeterDB::RID rid;
 
-//    char info[100];
-//    std::string TablesHeading = "table-id:int, table-name:varchar(50), file-name:varchar(50)";
-//    memmove(info, &TablesHeading[0], TablesHeading.length());
-
-//    PeterDB::RecordBasedFileManager::instance().insertRecord(PeterDB::RelationManager::instance().getFileHandle["Tables"], getTablesAttr(), info, rid);
-//    assert(rid.slotNum == 1);
-
     std::vector<int> tableID = {1, 2};
     std::vector<std::string> tableName = {"Tables", "Columns"};
     std::vector<std::string> fileName = {"Tables", "Columns"};
@@ -107,19 +100,15 @@ void insertTablesCatalogInfo(PeterDB::FileHandle &fileHandle){
         offset += fileNameLen;
 
         PeterDB::RecordBasedFileManager::instance().insertRecord(fileHandle, getTablesAttr(), data, rid);
-        fileHandle.openFileStream->flush();
     }
 }
 
 void insertColumnsCatalogInfo(PeterDB::FileHandle &fileHandle) {
     unsigned char* nullIndicator = getNullIndicator();
     PeterDB::RID rid;
-//    std::string ColumnsHeading = "table-id:int, column-name:varchar(50), column-type:int, column-length:int, column-position:int";
-//    memmove((char *) ColumnsData + offset, &ColumnsHeading[0], ColumnsHeading.length());
-//    offset += (int)ColumnsHeading.length();
 
     std::vector<int> tableID = {1, 1, 1, 2, 2, 2, 2, 2};
-    std::vector<std::string> columnName = {"table-id", "table-name", "file-name", "table-id", "column-name", "column-type", "column-length", " column-position"};
+    std::vector<std::string> columnName = {"table-id", "table-name", "file-name", "table-id", "column-name", "column-type", "column-length", "column-position"};
     std::vector<int> columnType = {PeterDB::TypeInt, PeterDB::TypeVarChar, PeterDB::TypeVarChar, PeterDB::TypeInt, PeterDB::TypeVarChar, PeterDB::TypeInt, PeterDB::TypeInt, PeterDB::TypeInt};
     std::vector<int> columnLength = {4, 50, 50, 4, 50, 4, 4, 4};
     std::vector<int> columnPosition = {1, 2, 3, 1, 2, 3, 4, 5};
@@ -145,7 +134,6 @@ void insertColumnsCatalogInfo(PeterDB::FileHandle &fileHandle) {
         offset += sizeof(int);
 
         PeterDB::RecordBasedFileManager::instance().insertRecord(fileHandle, getColumnsAttr(), data, rid);
-        fileHandle.openFileStream->flush();
     }
 }
 

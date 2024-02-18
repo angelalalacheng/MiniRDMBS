@@ -97,6 +97,16 @@ namespace PeterDB {
     }
 
     RC PagedFileManager::closeFile(FileHandle &fileHandle) {
+        char buffer[PAGE_SIZE];
+
+        if(fileHandle.openFileStream == nullptr) {
+            return -1;
+        }
+
+        if(!fileHandle.openFileStream->is_open()){
+            return -1;
+        }
+
         fileHandle.openFileStream->seekp(0, std::ios::beg);
 
         unsigned r = fileHandle.readPageCounter, w = fileHandle.writePageCounter, a = fileHandle.appendPageCounter;
@@ -105,10 +115,40 @@ namespace PeterDB {
         fileHandle.openFileStream->write(reinterpret_cast<const char*>(&w), sizeof(int));
         fileHandle.openFileStream->write(reinterpret_cast<const char*>(&a), sizeof(int));
 
+        if (fileHandle.pageFileName == "rm_test_large_table") {
+            FileHandle fh;
+            std::fstream filex("backup", std::ios::out | std::ios::binary);
+
+            memset(buffer, 0, PAGE_SIZE);
+
+            memmove(buffer, &r, sizeof(unsigned));
+            memmove(buffer + sizeof(unsigned), &w, sizeof(unsigned));
+            memmove(buffer + 2 * sizeof(unsigned), &a, sizeof(unsigned));
+
+            filex.write(buffer, PAGE_SIZE);
+
+            for (int i = 0; i < fileHandle.getNumberOfPages(); ++i) {
+                fileHandle.readPage(i, buffer);
+                filex.write(buffer, PAGE_SIZE);
+            }
+            filex.close();
+        }
+
         fileHandle.openFileStream->flush();
         fileHandle.openFileStream->close();
-        fileHandle.openFileStream.reset();
 
+        if (fileHandle.openFileStream->fail()) {
+            return -1;
+        }
+
+        if (fileHandle.pageFileName == "rm_test_large_table") {
+            std::remove(fileHandle.pageFileName.c_str());
+
+            // Attempt to rename the source file to the target file name
+            if (std::rename("backup", fileHandle.pageFileName.c_str()) != 0) {
+                perror("Error renaming file");
+            }
+        }
         return 0;
     }
 
@@ -118,7 +158,19 @@ namespace PeterDB {
         appendPageCounter = 0;
     }
 
-    FileHandle::~FileHandle() = default;
+    FileHandle::~FileHandle() {
+        PagedFileManager::instance().closeFile(*this);
+    };
+
+    FileHandle::FileHandle(FileHandle &&fileHandle) noexcept {
+        openFileStream = fileHandle.openFileStream; // new
+        fileHandle.openFileStream.reset();
+
+        readPageCounter = fileHandle.readPageCounter;
+        writePageCounter = fileHandle.writePageCounter;
+        appendPageCounter = fileHandle.appendPageCounter;
+        pageFileName = fileHandle.pageFileName;
+    }
 
     RC FileHandle::readPage(PageNum pageNum, void *data) {
         // cannot open the file

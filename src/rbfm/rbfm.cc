@@ -367,10 +367,17 @@ namespace PeterDB {
         fileHandle.readPage(targetRID.pageNum, buffer);
         std::vector<short> pageInfo = getPageInfo(buffer);
         SlotInfo targetRecord = getSlotInfo(buffer, pageInfo[1], targetRID.slotNum);
+        // offset == -1
         if(targetRecord.offset == -1) {
             data = nullptr;
             return -1;
         }
+        // no condition
+        if(attributeName.empty()) {
+            data = nullptr;
+            return 0;
+        }
+
         // get the target record
         char record[targetRecord.len];
         memmove(record, buffer + targetRecord.offset, targetRecord.len);
@@ -400,11 +407,9 @@ namespace PeterDB {
             endPos = getSpecificAttrOffset(record, indicatorSize, (int)recordDescriptor.size(), numOfAttr);
 
             memmove(data, record + startPos, endPos - startPos);
-
         }
 
         return 0;
-
     }
 
     RC RecordBasedFileManager::scan(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,
@@ -416,8 +421,12 @@ namespace PeterDB {
         if(attributeMap.find(conditionAttribute) != attributeMap.end()){
             compareAttr = attributeMap[conditionAttribute];
         }
-        else{
+        else if (conditionAttribute.empty()){
             compareAttr.length = 0;
+        }
+        else{
+            std::cout << "Attribute does not exist.\n";
+            return -1;
         }
 
         PageNum currentPage = 0;
@@ -428,18 +437,19 @@ namespace PeterDB {
         while(currentPage < fileHandle.getNumberOfPages()){
             fileHandle.readPage(currentPage, buffer);
             pageInfo = getPageInfo(buffer);
-            for(int i = 1; i <= pageInfo[1]; i++){
-                memset(data, 0, compareAttr.length + 4);
-                bool good = false;
 
+            for(int i = 1; i <= pageInfo[1]; i++){
+                bool good = false;
                 rid.pageNum = currentPage;
                 rid.slotNum = i;
 
-                if(conditionAttribute.empty()){
-                    good = true;
+                memset(data, 0, compareAttr.length + 4);
+                RC rc = readAttribute(fileHandle, recordDescriptor, rid, conditionAttribute, data);
+                if(conditionAttribute.empty() || compOp == PeterDB::NO_OP){
+                    if(rc == 0) good = true;
                 }
                 else{
-                    readAttribute(fileHandle, recordDescriptor, rid, conditionAttribute, data);
+                    if(rc == -1) continue;
                     switch(compareAttr.type){
                         case TypeInt:
                             int intVal1, intVal2;
@@ -478,7 +488,7 @@ namespace PeterDB {
             currentPage += 1;
         }
 
-        rbfm_ScanIterator.fileHandle = fileHandle;
+        rbfm_ScanIterator.fileHandle = &fileHandle;
         rbfm_ScanIterator.projectedAttributes = attributeNames;
         rbfm_ScanIterator.recordDescriptor = recordDescriptor;
         rbfm_ScanIterator.attributeMap = attributeMap;
@@ -503,7 +513,7 @@ namespace PeterDB {
 
         for(int i = 0; i < projectedAttributes.size(); i++){
             std::string s = projectedAttributes[i];
-            RecordBasedFileManager::instance().readAttribute(fileHandle, recordDescriptor, rid, s, getValue);
+            RecordBasedFileManager::instance().readAttribute(*fileHandle, recordDescriptor, rid, s, getValue);
 
             if(getValue == nullptr){
                 setSpecificAttrNullFlag(indicator, i + 1);
@@ -534,6 +544,7 @@ namespace PeterDB {
     RC RBFM_ScanIterator::close() {
         currentIndex = 0;
         candidates.clear();
+        fileHandle = nullptr;
         return 0;
     }
 } // namespace PeterDB

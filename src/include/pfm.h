@@ -42,7 +42,9 @@ namespace PeterDB {
         // add vector to record the free space
 
         FileHandle();                                                       // Default constructor
-        ~FileHandle();                                                      // Destructor
+        ~FileHandle();
+        // Destructor
+        FileHandle(FileHandle &&fileHandle) noexcept;
 
         RC readPage(PageNum pageNum, void *data);                           // Get a specific page(pageNum data save to data space)
         RC writePage(PageNum pageNum, const void *data);                    // Write a specific page(write data to pageNum page)

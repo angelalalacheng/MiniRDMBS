@@ -40,7 +40,7 @@ namespace PeterDB {
     public:
         static RelationManager &instance();
 
-        static RC getFileHandle(const std::string& fileName, FileHandle& fileHandle);
+        static FileHandle &getFileHandle(const std::string& fileName);
 
         static RC closeAndRemoveFileHandle(const std::string& fileName);
 
