@@ -41,7 +41,7 @@ namespace PeterDB {
     }
 
     RC RelationManager::createCatalog() {
-        std::cout << "create Catalog\n";
+//        std::cout << "create Catalog\n";
         RC createTables = RecordBasedFileManager::instance().createFile("Tables");
         if (createTables == -1) return -1;
         RC createColumns = RecordBasedFileManager::instance().createFile("Columns");
@@ -59,7 +59,7 @@ namespace PeterDB {
     }
 
     RC RelationManager::deleteCatalog() {
-        std::cout << "### deleteCatalog"<< std::endl;
+//        std::cout << "### deleteCatalog"<< std::endl;
         if(fileHandleCache.find("Tables") == fileHandleCache.end() || fileHandleCache.find("Columns") == fileHandleCache.end()) return -1;
 
         if (closeAndRemoveFileHandle("Tables") != 0 || closeAndRemoveFileHandle("Columns") != 0) {
@@ -76,7 +76,7 @@ namespace PeterDB {
     }
 
     RC RelationManager::createTable(const std::string &tableName, const std::vector<Attribute> &attrs) {
-        std::cout << "### createTable: " + tableName <<std::endl;
+//        std::cout << "### createTable: " + tableName <<std::endl;
         if(tableName == "Tables" || tableName == "Columns") return -1;
         if(fileHandleCache.find("Tables") == fileHandleCache.end() || fileHandleCache.find("Columns") == fileHandleCache.end()) return -1;
 
@@ -94,7 +94,7 @@ namespace PeterDB {
     }
 
     RC RelationManager::deleteTable(const std::string &tableName) {
-        std::cout << "### deleteTable: " + tableName << std::endl;
+//        std::cout << "### deleteTable: " + tableName << std::endl;
         if(tableName == "Tables" || tableName == "Columns") return -1;
         if((fileHandleCache.find(tableName) == fileHandleCache.end())) return -1;
 
