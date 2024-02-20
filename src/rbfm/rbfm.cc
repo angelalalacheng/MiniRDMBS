@@ -137,23 +137,10 @@ namespace PeterDB {
                                           const RID &rid, void *data) {
         // check whether it is tombstone
         char buffer[PAGE_SIZE];
-        std::vector<short> pageInfo;
-        SlotInfo targetRecord;
-        RID targetRID = rid;
-        bool isTombstone = true;
-
-        while(isTombstone){
-            fileHandle.readPage(targetRID.pageNum, buffer);
-            pageInfo = getPageInfo(buffer);
-            targetRecord = getSlotInfo(buffer, pageInfo[1], targetRID.slotNum);
-
-            if(targetRecord.tombstone == 1){
-                memmove(&targetRID, buffer + targetRecord.offset, sizeof(RID));
-            }
-            else{
-                isTombstone = false;
-            }
-        }
+        RID targetRID = resolveTombstone(fileHandle, rid);
+        fileHandle.readPage(targetRID.pageNum, buffer);
+        std::vector<short> pageInfo = getPageInfo(buffer);
+        SlotInfo targetRecord = getSlotInfo(buffer, pageInfo[1], targetRID.slotNum);
 
         int fields = (int)recordDescriptor.size();
         int indicatorSize = getNullIndicatorSize(fields);
@@ -275,25 +262,12 @@ namespace PeterDB {
 
     RC RecordBasedFileManager::updateRecord(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,
                                             const void *data, const RID &rid) {
-        // check whether it is tombstone or not
+        // check whether it is tombstone
         char buffer[PAGE_SIZE];
-        std::vector<short> pageInfo;
-        SlotInfo targetRecord;
-        RID targetRID = rid;
-        bool isTombstone = true;
-
-        while(isTombstone){
-            fileHandle.readPage(targetRID.pageNum, buffer);
-            pageInfo = getPageInfo(buffer);
-            targetRecord = getSlotInfo(buffer, pageInfo[1], targetRID.slotNum);
-
-            if(targetRecord.tombstone == 1){
-                memmove(&targetRID, buffer + targetRecord.offset, sizeof(RID));
-            }
-            else{
-                isTombstone = false;
-            }
-        }
+        RID targetRID = resolveTombstone(fileHandle, rid);
+        fileHandle.readPage(targetRID.pageNum, buffer);
+        std::vector<short> pageInfo = getPageInfo(buffer);
+        SlotInfo targetRecord = getSlotInfo(buffer, pageInfo[1], targetRID.slotNum);
 
         // Get null flags
         int fields = (int)recordDescriptor.size();
@@ -367,16 +341,12 @@ namespace PeterDB {
         fileHandle.readPage(targetRID.pageNum, buffer);
         std::vector<short> pageInfo = getPageInfo(buffer);
         SlotInfo targetRecord = getSlotInfo(buffer, pageInfo[1], targetRID.slotNum);
-        // offset == -1
-        if(targetRecord.offset == -1) {
-            data = nullptr;
-            return -1;
-        }
-        // no condition
-        if(attributeName.empty()) {
-            data = nullptr;
-            return 0;
-        }
+
+        // offset == -1 -> deleted record
+        if(targetRecord.offset == -1 || targetRecord.len == -1) return -1;
+
+        // no condition(也不算bad)
+        if(attributeName.empty()) return 0;
 
         // get the target record
         char record[targetRecord.len];
@@ -384,11 +354,9 @@ namespace PeterDB {
 
         // get the target attribute of target record
         int numOfAttr = 0;
-        Attribute targetAttr;
         for(int i = 0; i < recordDescriptor.size(); i++){
             if(recordDescriptor[i].name == attributeName){
                 numOfAttr = i + 1;
-                targetAttr = recordDescriptor[i];
                 break;
             }
         }
@@ -399,6 +367,7 @@ namespace PeterDB {
 
         if(isNull){
             data = nullptr;
+            return 1;
         }
         else{
             short startPos, endPos;
@@ -443,26 +412,30 @@ namespace PeterDB {
                 rid.pageNum = currentPage;
                 rid.slotNum = i;
 
+                SlotInfo slotInfo = getSlotInfo(buffer, pageInfo[1], i);
+                if(slotInfo.offset == -1) continue;
+
                 memset(data, 0, compareAttr.length + 4);
                 RC rc = readAttribute(fileHandle, recordDescriptor, rid, conditionAttribute, data);
+
                 if(conditionAttribute.empty() || compOp == PeterDB::NO_OP){
                     if(rc == 0) good = true;
                 }
                 else{
-                    if(rc == -1) continue;
+                    if(rc == -1 || rc == 1) continue;
                     switch(compareAttr.type){
                         case TypeInt:
                             int intVal1, intVal2;
                             if(!data) break;
                             intVal1 = *reinterpret_cast<int*>(data);
-                            intVal2 = value == nullptr? -1 : *reinterpret_cast<const int*>(value); // No condition
+                            intVal2 = *reinterpret_cast<const int*>(value);
                             if(compareInt(intVal1, intVal2, compOp)) good = true;
                             break;
                         case TypeReal:
                             float floatVal1, floatVal2;
                             if(!data) break;
                             floatVal1 = *reinterpret_cast<float*>(data);
-                            floatVal2 = value == nullptr? -1.0 : *reinterpret_cast<const float*>(value); // No condition
+                            floatVal2 = *reinterpret_cast<const float*>(value);
                             if(compareFloat(floatVal1, floatVal2, compOp)) good = true;
                             break;
                         case TypeVarChar:
@@ -502,6 +475,8 @@ namespace PeterDB {
         if (currentIndex >= candidates.size() || candidates.empty()) {
             return RBFM_EOF;
         }
+
+        // prepare nullIndicator
         rid = candidates[currentIndex];
         int nullFieldsIndicatorActualSize = getNullIndicatorSize((int) projectedAttributes.size());
         auto indicator = new unsigned char[nullFieldsIndicatorActualSize];
@@ -509,7 +484,7 @@ namespace PeterDB {
 
         // processing the data (go through each projected attribute)
         int offset = 0;
-        void* getValue = malloc(200);
+        void* getValue = malloc(500);
 
         for(int i = 0; i < projectedAttributes.size(); i++){
             std::string s = projectedAttributes[i];
@@ -522,15 +497,15 @@ namespace PeterDB {
                 if(attributeMap[s].type == TypeVarChar){
                     int length;
                     memmove(&length, getValue, sizeof(int));
-                    memmove((char *)data + offset, getValue, 4 + length);
-                    offset += (4 + length);
+                    memmove((char *)data + offset, getValue, sizeof(int) + length);
+                    offset += (sizeof(int) + length);
                 }
                 else{
                     memmove((char *)data + offset, getValue, 4);
                     offset += 4;
                 }
             }
-            memset(getValue, 0, 200);
+            memset(getValue, 0, 500);
         }
 
         memmove((char *) data + nullFieldsIndicatorActualSize, data, offset);

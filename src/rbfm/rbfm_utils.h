@@ -21,7 +21,7 @@ int getSpecificAttrNullFlag(const char* record, int indicatorSize, int target){
     memmove(indicator, record + sizeof(PeterDB::RID), indicatorSize);
 
     target -= 1;
-    return indicator[target / 8] & (1 << (7 - target % 8));
+    return (indicator[target / 8] & (1 << (7 - target % 8))) ? 1 : 0;
 }
 
 void setSpecificAttrNullFlag(unsigned char* indicator, int fieldIndex){
@@ -32,6 +32,15 @@ void setSpecificAttrNullFlag(unsigned char* indicator, int fieldIndex){
 
     // Set the bit at bitPosition in indicator[byteIndex]
     indicator[byteIndex] |= (1 << bitPosition);
+}
+
+int getAttrIndex(const std::vector<PeterDB::Attribute> &recordDescriptor, const std::string &attributeName){
+    for(int i = 0; i < recordDescriptor.size(); i++){
+        if(recordDescriptor[i].name == attributeName){
+            return i + 1;
+        }
+    }
+    return -1;
 }
 
 short getSpecificAttrOffset(const char* record, int indicatorSize, int fields, int targetAttr){
@@ -45,6 +54,18 @@ short getSpecificAttrOffset(const char* record, int indicatorSize, int fields, i
     memmove(&targetAttrOffset, record + targetAttrOffsetPos, sizeof(short));
 
     return targetAttrOffset;
+}
+
+char* getField(const char* record, int fields, int targetAttr){
+    int indicatorSize = getNullIndicatorSize(fields);
+    short startPos = getSpecificAttrOffset(record, indicatorSize, fields, targetAttr - 1);
+    short endPos = getSpecificAttrOffset(record, indicatorSize, fields, targetAttr);
+
+    int dataSize = endPos - startPos;
+    char* data = new char[dataSize];
+    memmove(data, record + startPos, dataSize);
+
+    return data;
 }
 
 std::vector<int> getNullFlags(int fields, const char* indicator, int indicatorSize){
@@ -350,6 +371,33 @@ bool compareString(const std::string& value1, const std::string& value2, PeterDB
     }
 }
 
+bool matchCondition (const char* field, const void *value, const PeterDB::CompOp &compOp, const PeterDB::AttrType type) {
+    if (compOp == PeterDB::NO_OP) return true;
+
+    switch(type) {
+        case PeterDB::TypeInt:
+            int intVal1, intVal2;
+            intVal1 = *reinterpret_cast<const int*>(field);
+            intVal2 = *reinterpret_cast<const int*>(value);
+            return compareInt(intVal1, intVal2, compOp);
+        case PeterDB::TypeReal:
+            float floatVal1, floatVal2;
+            floatVal1 = *reinterpret_cast<const float*>(field);
+            floatVal2 = *reinterpret_cast<const float*>(value);
+            return compareFloat(floatVal1, floatVal2, compOp);
+        case PeterDB::TypeVarChar:
+            int length1, length2;
+            memmove(&length1, field, sizeof(int));
+            memmove(&length2, (char *)value, sizeof(int));
+            std::string strVal1, strVal2;
+            strVal1.resize(length1);
+            memmove(&strVal1[0], field + sizeof(int), length1);
+            strVal2.resize(length2);
+            memmove(&strVal2[0], (char *)value + sizeof(int), length2);
+            return compareString(strVal1, strVal1, compOp);
+    }
+}
+
 PeterDB::RID resolveTombstone(PeterDB::FileHandle &fileHandle, PeterDB::RID rid) {
     char buffer[PAGE_SIZE];
     bool isTombstone = true;
@@ -370,8 +418,8 @@ PeterDB::RID resolveTombstone(PeterDB::FileHandle &fileHandle, PeterDB::RID rid)
     return currentRID;
 }
 
-char* getRecordFromRID(PeterDB::FileHandle &fileHandle, PeterDB::RID rid, short &len) {
-    rid = resolveTombstone(fileHandle, rid);
+char* getRecordFromRID(PeterDB::FileHandle &fileHandle, PeterDB::RID rid) {
+//    rid = resolveTombstone(fileHandle, rid);
 
     char page[PAGE_SIZE];
     fileHandle.readPage(rid.pageNum, page);
@@ -382,7 +430,7 @@ char* getRecordFromRID(PeterDB::FileHandle &fileHandle, PeterDB::RID rid, short 
     char* record = new char[recordInfo.len];
     memmove(record, page + recordInfo.offset, recordInfo.len);
 
-    len = recordInfo.len;
+//    len = recordInfo.len;
     return record;
 }
 

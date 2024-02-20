@@ -60,6 +60,7 @@ namespace PeterDB {
 
     RC RelationManager::deleteCatalog() {
 //        std::cout << "### deleteCatalog"<< std::endl;
+// ERROR: error: File already exists
         if(fileHandleCache.find("Tables") == fileHandleCache.end() || fileHandleCache.find("Columns") == fileHandleCache.end()) return -1;
 
         if (closeAndRemoveFileHandle("Tables") != 0 || closeAndRemoveFileHandle("Columns") != 0) {
@@ -206,7 +207,6 @@ namespace PeterDB {
         std::vector<Attribute> attrs;
         getAttributes(tableName, attrs);
         RecordBasedFileManager::instance().insertRecord(fileHandle, attrs, data, rid);
-//        fileHandle.openFileStream->flush();
 
         return 0;
     }
@@ -271,9 +271,9 @@ namespace PeterDB {
             }
         }
         unsigned char * indicator = getNullIndicator();
-        RecordBasedFileManager::instance().readAttribute(fileHandle, attrs, rid, attributeName, data);
+        RC rc = RecordBasedFileManager::instance().readAttribute(fileHandle, attrs, rid, attributeName, data);
 
-        if(data != nullptr){
+        if(rc == 0){
             memmove((char *) data + 1, data, len);
             memmove(data, indicator, 1);
         }
