@@ -10,6 +10,28 @@
 # define IX_EOF (-1)  // end of the index scan
 
 namespace PeterDB {
+    typedef struct {
+        short isLeaf;
+        PageNum parent;       // no parent then -1
+        PageNum leftSibling;  // page number of the left sibling (if is not leaf then save it -1)
+        PageNum rightSibling; // page number of the right sibling
+    } NodeHeader;
+
+    typedef struct{
+        short currentKey;
+        short maxKeys;
+        std::vector<char> routingKey;
+        std::vector<PageNum> pointers;
+    } NonLeafNode;
+
+    typedef struct {
+        short currentKey;
+        short maxKeys;
+        std::vector<char> key;
+        std::vector<RID> rid;
+        std::vector<char> keyAndRid;
+    } LeafNode;
+
     class IX_ScanIterator;
 
     class IXFileHandle;
@@ -80,6 +102,7 @@ namespace PeterDB {
         unsigned ixReadPageCounter;
         unsigned ixWritePageCounter;
         unsigned ixAppendPageCounter;
+        FileHandle fileHandle;
 
         // Constructor
         IXFileHandle();
@@ -87,8 +110,11 @@ namespace PeterDB {
         // Destructor
         ~IXFileHandle();
 
-        // Put the current counter values of associated PF FileHandles into variables
+        // Put the current counter values of associated PFM FileHandles into variables
         RC collectCounterValues(unsigned &readPageCount, unsigned &writePageCount, unsigned &appendPageCount);
+
+        // Set the counter values from PFM FileHandles
+        RC setCounterValues();
 
     };
 }// namespace PeterDB
