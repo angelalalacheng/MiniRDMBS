@@ -47,11 +47,15 @@ namespace PeterDB {
     RC
     IndexManager::insertEntry(IXFileHandle &ixFileHandle, const Attribute &attribute, const void *key, const RID &rid) {
         if(ixFileHandle.fileHandle.getNumberOfPages() == 0){
-            size_t entryInPage = getNumOfEntryInPage(attribute);
-            dummyNode(ixFileHandle.fileHandle);
-//            initialNewNode(ixFileHandle.fileHandle, 1);
+            short entryInPage = getNumOfEntryInPage(attribute);
+            dummyNode(ixFileHandle.fileHandle); // pageNum = 0
+            initialNonLeafNodePage(ixFileHandle.fileHandle, attribute, entryInPage);// pageNum = 1
+            setRootPage(ixFileHandle.fileHandle, 1);
+            initialLeafNodePage(ixFileHandle.fileHandle, attribute, entryInPage);
         }
-
+        //recursiveInsertBTree(PeterDB::FileHandle &fileHandle, PeterDB::PageNum pageNumber, const PeterDB::Attribute &attribute, const void *key, const PeterDB::RID &rid, PeterDB::NewEntry *newChildEntry)
+        NewEntry *newChildEntry = nullptr;
+        recursiveInsertBTree(ixFileHandle.fileHandle, 0, attribute, key, rid, newChildEntry);
         return 0;
     }
     /*
@@ -64,7 +68,74 @@ namespace PeterDB {
      */
     RC
     IndexManager::deleteEntry(IXFileHandle &ixFileHandle, const Attribute &attribute, const void *key, const RID &rid) {
-        return -1;
+        AttrLength typeLen = attribute.type == TypeVarChar ? 4 : sizeof (int) + attribute.length;
+        SearchEntryInfo searchEntryInfo = searchEntry(ixFileHandle, attribute, key);
+
+        if(searchEntryInfo.targetIndex == -1) return -1;
+
+        char nodeData [PAGE_SIZE];
+        ixFileHandle.fileHandle.readPage(searchEntryInfo.targetPage, nodeData);
+
+        LeafNode leafNode;
+        deserializeLeafNode(leafNode, nodeData);
+
+        clearEntry(leafNode.key, searchEntryInfo.targetIndex, typeLen);
+        leafNode.rid.erase(leafNode.rid.begin() + searchEntryInfo.targetIndex);
+        leafNode.rid.emplace_back();
+        leafNode.currentKey--;
+
+        serializeLeafNode(leafNode, nodeData);
+
+        ixFileHandle.fileHandle.writePage(searchEntryInfo.targetPage, nodeData);
+
+        return 0;
+    }
+
+    SearchEntryInfo IndexManager::searchEntry(IXFileHandle &ixFileHandle, const Attribute &attribute, const void *key) {
+        AttrLength typeLen = attribute.type == TypeVarChar ? 4 : sizeof (int) + attribute.length;
+        PageNum currentPage = getRootPage(ixFileHandle.fileHandle);
+
+        char nodeData [PAGE_SIZE];
+        NodeHeader nodeHeader;
+
+        while (true) {
+            nodeHeader = getNodeHeader(ixFileHandle.fileHandle, currentPage);
+            ixFileHandle.fileHandle.readPage(currentPage, nodeData);
+
+            if(nodeHeader.isLeaf){ // leaf node
+                LeafNode leafNode;
+                deserializeLeafNode(leafNode, nodeData);
+                SearchEntryInfo searchEntryInfo;
+                searchEntryInfo.targetIndex = -1;
+                for(int i = 0; i < leafNode.currentKey; i++){
+                    int temp;
+                    getEntry(leafNode.key, i, typeLen, &temp);
+                    if(*reinterpret_cast<const int*>(key) == temp){
+                        searchEntryInfo.targetPage = currentPage;
+                        searchEntryInfo.targetIndex = i;
+                        return searchEntryInfo;
+                    }
+                }
+                return searchEntryInfo;
+            }
+            else{ // non-leaf node
+                NonLeafNode nonLeafNode;
+                deserializeNonLeafNode(nonLeafNode, nodeData);
+                PeterDB::PageNum nextNode = -1;
+                for(int i = 0; i < nonLeafNode.currentKey; i++){
+                    int temp;
+                    getEntry(nonLeafNode.routingKey, i, typeLen, &temp);
+                    if(*reinterpret_cast<const int*>(key) < temp){
+                        nextNode = nonLeafNode.pointers[i];
+                    }
+                }
+                if(nextNode == -1){
+                    nextNode = nonLeafNode.pointers[nonLeafNode.currentKey];
+                }
+
+                currentPage = nextNode;
+            }
+        }
     }
 
     /*
@@ -86,6 +157,7 @@ namespace PeterDB {
     }
 
     RC IndexManager::printBTree(IXFileHandle &ixFileHandle, const Attribute &attribute, std::ostream &out) const {
+
     }
 
     IX_ScanIterator::IX_ScanIterator() {

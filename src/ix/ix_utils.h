@@ -11,9 +11,9 @@
 #include <iostream>
 #include <algorithm>
 
-size_t getNumOfEntryInPage(const PeterDB::Attribute &attribute){
-    size_t size = attribute.length + sizeof(PeterDB::RID) * 2;
-    size_t numOfNode = (PAGE_SIZE - sizeof(PeterDB::NodeHeader))/ size;
+short getNumOfEntryInPage(const PeterDB::Attribute &attribute){
+    short size = attribute.length + sizeof(PeterDB::RID) * 2;
+    short numOfNode = (PAGE_SIZE - sizeof(PeterDB::NodeHeader))/ size;
 
     return numOfNode;
 }
@@ -32,9 +32,13 @@ void getEntry(const std::vector<char>& arr, size_t index, size_t typeLen, void* 
 
 void clearEntry(std::vector<char>& arr, size_t index, size_t typeLen) {
     size_t startPos = index * typeLen;
+    size_t endPos = startPos + typeLen;
 
-    if (startPos < arr.size() && (startPos + typeLen) <= arr.size()) {
-        std::memset(arr.data() + startPos, 0, typeLen);
+    if (startPos < arr.size() && endPos < arr.size()) {
+        // 使用memmove将后续元素向前移动覆盖被删除的键
+        memmove(arr.data() + startPos, arr.data() + endPos, arr.size() - endPos);
+        // 将最后一个键的位置填充为0（因为我们不改变vector的大小）
+        memset(arr.data() + arr.size() - typeLen, 0, typeLen);
     }
 }
 

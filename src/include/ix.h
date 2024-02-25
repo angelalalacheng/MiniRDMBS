@@ -37,6 +37,11 @@ namespace PeterDB {
         PageNum pageNum;
     } NewEntry;
 
+    typedef struct {
+        PageNum targetPage;
+        int targetIndex;
+    } SearchEntryInfo;
+
     class IX_ScanIterator;
 
     class IXFileHandle;
@@ -63,6 +68,8 @@ namespace PeterDB {
 
         // Delete an entry from the given index that is indicated by the given ixFileHandle.
         RC deleteEntry(IXFileHandle &ixFileHandle, const Attribute &attribute, const void *key, const RID &rid);
+
+        SearchEntryInfo searchEntry(IXFileHandle &ixFileHandle, const Attribute &attribute, const void *key);
 
         // Initialize and IX_ScanIterator to support a range search
         RC scan(IXFileHandle &ixFileHandle,
