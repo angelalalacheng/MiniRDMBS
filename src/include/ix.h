@@ -12,6 +12,7 @@
 namespace PeterDB {
     typedef struct {
         short isLeaf;
+        short isDummy;
         PageNum parent;       // no parent then -1
         PageNum leftSibling;  // page number of the left sibling (if is not leaf then save it -1)
         PageNum rightSibling; // page number of the right sibling
@@ -29,8 +30,12 @@ namespace PeterDB {
         short maxKeys;
         std::vector<char> key;
         std::vector<RID> rid;
-        std::vector<char> keyAndRid;
     } LeafNode;
+
+    typedef struct {
+        void *key;
+        PageNum pageNum;
+    } NewEntry;
 
     class IX_ScanIterator;
 

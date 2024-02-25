@@ -38,90 +38,79 @@ void clearEntry(std::vector<char>& arr, size_t index, size_t typeLen) {
     }
 }
 
-void insertIntEntry(PeterDB::LeafNode& leafNodeInfo, size_t typeLen, const void* entryData, const PeterDB::RID &entryRID) {
-    std::vector<char> arr = leafNodeInfo.key;
-    std::vector<PeterDB::RID> rids = leafNodeInfo.rid;
-    short entryCount = leafNodeInfo.currentKey;
+void insertIntEntry(PeterDB::LeafNode* leafNodeInfo, PeterDB::NonLeafNode* nonLeafNodeInfo, bool isLeaf, size_t typeLen, const void* entryData, const PeterDB::RID* entryRID, const PeterDB::PageNum* pageNum) {
+    std::vector<char>& arr = isLeaf ? leafNodeInfo->key : nonLeafNodeInfo->routingKey;
+    short& entryCount = isLeaf ? leafNodeInfo->currentKey : nonLeafNodeInfo->currentKey;
 
-    size_t left = 0;
-    size_t right = entryCount;
-    size_t mid = 0;
+    size_t left = 0, right = entryCount, mid = 0;
     int target = *reinterpret_cast<const int*>(entryData);
 
     while (left < right) {
         mid = (left + right) / 2;
         char midData[typeLen];
-        getEntry(leafNodeInfo.key, mid, typeLen, midData);
+        getEntry(arr, mid, typeLen, midData);
         int midValue = *reinterpret_cast<int*>(midData);
-        if (midValue == target) {
-            return;
-        }
-        else if (target < midValue) {
-            right = mid;
-        }
-        else {
-            left = mid + 1;
-        }
+        if (midValue == target) return;
+        else if (target < midValue) right = mid;
+        else left = mid + 1;
     }
-    // 从插入点开始向后移动元素，为新元素腾出空间
+
+    // 为新元素腾出空间
     memmove(arr.data() + ((left + 1) * typeLen), arr.data() + (left * typeLen), (entryCount - left) * typeLen);
-    move_backward(rids.begin() + left, rids.begin() + entryCount, rids.begin() + entryCount + 1);
+    memmove(arr.data() + (left * typeLen), entryData, typeLen); // 复制新键值
 
-    // 将新元素复制到腾出的空间
-    memmove(arr.data() + (left * typeLen), entryData, typeLen);
-    rids[left] = entryRID;
+    if (isLeaf) {
+        std::vector<PeterDB::RID>& rids = leafNodeInfo->rid;
+        move_backward(rids.begin() + left, rids.begin() + entryCount, rids.begin() + entryCount + 1);
+        rids[left] = *entryRID; // 对叶节点插入新RID
+    } else {
+        std::vector<PeterDB::PageNum>& pointers = nonLeafNodeInfo->pointers;
+        move_backward(pointers.begin() + left + 1, pointers.begin() + entryCount + 1, pointers.begin() + entryCount + 2);
+        pointers[left + 1] = *pageNum; // 对非叶节点插入新页号
+    }
 
-    leafNodeInfo.key = arr;
-    leafNodeInfo.rid = rids;
-    leafNodeInfo.currentKey = entryCount + 1;
+    entryCount += 1; // 更新键值计数
 }
 
-void insertFloatEntry(PeterDB::LeafNode& leafNodeInfo, size_t typeLen, const void* entryData, const PeterDB::RID &entryRID){
-    std::vector<char> arr = leafNodeInfo.key;
-    std::vector<PeterDB::RID> rids = leafNodeInfo.rid;
-    short entryCount = leafNodeInfo.currentKey;
+void insertFloatEntry(PeterDB::LeafNode* leafNodeInfo, PeterDB::NonLeafNode* nonLeafNodeInfo, bool isLeaf, size_t typeLen, const void* entryData, const PeterDB::RID* entryRID, const PeterDB::PageNum* pageNum){
+    std::vector<char>& arr = isLeaf ? leafNodeInfo->key : nonLeafNodeInfo->routingKey;
+    short& entryCount = isLeaf ? leafNodeInfo->currentKey : nonLeafNodeInfo->currentKey;
 
-    size_t left = 0;
-    size_t right = entryCount;
-    size_t mid = 0;
-    float target = *reinterpret_cast<const float *>(entryData);
+    size_t left = 0, right = entryCount, mid = 0;
+    float target = *reinterpret_cast<const float*>(entryData);
 
     while (left < right) {
         mid = (left + right) / 2;
         char midData[typeLen];
         getEntry(arr, mid, typeLen, midData);
-        float midValue = *reinterpret_cast<float *>(midData);
-        if (midValue == target) {
-            return;
-        }
-        else if (target < midValue) {
-            right = mid;
-        }
-        else {
-            left = mid + 1;
-        }
+        float midValue = *reinterpret_cast<float*>(midData);
+        if (midValue == target) return;
+        else if (target < midValue) right = mid;
+        else left = mid + 1;
     }
-    // 从插入点开始向后移动元素，为新元素腾出空间
+
+    // 为新元素腾出空间
     memmove(arr.data() + ((left + 1) * typeLen), arr.data() + (left * typeLen), (entryCount - left) * typeLen);
-    std::move_backward(rids.begin() + left, rids.begin() + entryCount, rids.begin() + entryCount + 1);
+    memmove(arr.data() + (left * typeLen), entryData, typeLen); // 复制新键值
 
-    // 将新元素复制到腾出的空间
-    memmove(arr.data() + (left * typeLen), entryData, typeLen);
-    rids[left] = entryRID;
+    if (isLeaf) {
+        std::vector<PeterDB::RID>& rids = leafNodeInfo->rid;
+        move_backward(rids.begin() + left, rids.begin() + entryCount, rids.begin() + entryCount + 1);
+        rids[left] = *entryRID; // 对叶节点插入新RID
+    } else {
+        std::vector<PeterDB::PageNum>& pointers = nonLeafNodeInfo->pointers;
+        move_backward(pointers.begin() + left + 1, pointers.begin() + entryCount + 1, pointers.begin() + entryCount + 2);
+        pointers[left + 1] = *pageNum; // 对非叶节点插入新页号
+    }
 
-    leafNodeInfo.key = arr;
-    leafNodeInfo.rid = rids;
-    leafNodeInfo.currentKey = entryCount + 1;
+    entryCount += 1; // 更新键值计数
 }
 
-void insertVarCharEntry(PeterDB::LeafNode& leafNodeInfo, size_t typeLen, const void* entryData, const PeterDB::RID &entryRID){
-    std::vector<char> arr = leafNodeInfo.key;
-    std::vector<PeterDB::RID> rids = leafNodeInfo.rid;
-    short entryCount = leafNodeInfo.currentKey;
+void insertVarCharEntry(PeterDB::LeafNode* leafNodeInfo, PeterDB::NonLeafNode* nonLeafNodeInfo, bool isLeaf, size_t typeLen, const void* entryData, const PeterDB::RID* entryRID, const PeterDB::PageNum* pageNum){
+    std::vector<char>& arr = isLeaf ? leafNodeInfo->key : nonLeafNodeInfo->routingKey;
+    short& entryCount = isLeaf ? leafNodeInfo->currentKey : nonLeafNodeInfo->currentKey;
 
-    size_t left = 0;
-    size_t right = entryCount;
-    size_t mid = 0;
+    size_t left = 0, right = entryCount, mid = 0;
 
     int len;
     memmove(&len, entryData, sizeof (int));
@@ -140,40 +129,40 @@ void insertVarCharEntry(PeterDB::LeafNode& leafNodeInfo, size_t typeLen, const v
         midValue.resize(tempLen);
         memmove(&midValue[0], (char *)midData + sizeof (int), tempLen);
 
-        if (midValue == target) {
-            return;
-        }
-        else if (target < midValue) {
-            right = mid;
-        }
-        else {
-            left = mid + 1;
-        }
+        if (midValue == target) return;
+        else if (target < midValue) right = mid;
+        else left = mid + 1;
     }
-    // 从插入点开始向后移动元素，为新元素腾出空间
+
+    // 为新元素腾出空间
     memmove(arr.data() + ((left + 1) * typeLen), arr.data() + (left * typeLen), (entryCount - left) * typeLen);
-    std::move_backward(rids.begin() + left, rids.begin() + entryCount, rids.begin() + entryCount + 1);
-
-    // 将新元素复制到腾出的空间
     memmove(arr.data() + (left * typeLen), entryData, typeLen);
-    rids[left] = entryRID;
 
-    leafNodeInfo.key = arr;
-    leafNodeInfo.rid = rids;
-    leafNodeInfo.currentKey = entryCount + 1;
+    if (isLeaf) {
+        std::vector<PeterDB::RID>& rids = leafNodeInfo->rid;
+        move_backward(rids.begin() + left, rids.begin() + entryCount, rids.begin() + entryCount + 1);
+        rids[left] = *entryRID; // 对叶节点插入新RID
+    } else {
+        std::vector<PeterDB::PageNum>& pointers = nonLeafNodeInfo->pointers;
+        move_backward(pointers.begin() + left + 1, pointers.begin() + entryCount + 1, pointers.begin() + entryCount + 2);
+        pointers[left + 1] = *pageNum; // 对非叶节点插入新页号
+    }
+
+    entryCount += 1; // 更新键值计数
+
 }
 
-void insertEntry(PeterDB::LeafNode& leafNodeInfo, const PeterDB::Attribute &attribute, const void* entryData, const PeterDB::RID &entryRID){
+void insertEntry(bool isLeaf, PeterDB::LeafNode* leafNodeInfo, PeterDB::NonLeafNode* nonLeafNodeInfo, const PeterDB::Attribute &attribute, const void* entryData, const PeterDB::RID* entryRID, PeterDB::PageNum* pageNum){
     size_t typeLen = attribute.length;
 
     if(attribute.type == PeterDB::TypeInt){
-        insertIntEntry(leafNodeInfo, typeLen, entryData, entryRID);
+        insertIntEntry(leafNodeInfo, nonLeafNodeInfo, isLeaf, typeLen, entryData, entryRID, pageNum);
     }
     else if(attribute.type == PeterDB::TypeReal){
-        insertFloatEntry(leafNodeInfo, typeLen, entryData, entryRID);
+        insertFloatEntry(leafNodeInfo, nonLeafNodeInfo, isLeaf, typeLen, entryData, entryRID, pageNum);
     }
     else if(attribute.type == PeterDB::TypeVarChar){
-        insertVarCharEntry(leafNodeInfo, typeLen, entryData, entryRID);
+        insertVarCharEntry(leafNodeInfo, nonLeafNodeInfo, isLeaf, typeLen, entryData, entryRID, pageNum);
     }
 }
 
@@ -323,9 +312,18 @@ void initialLeafNodePage(PeterDB::FileHandle &fileHandle, const PeterDB::Attribu
 void dummyNode(PeterDB::FileHandle &fileHandle){ // dummy node (pageNum = 0) point to the current root
     char dummy[PAGE_SIZE];
     memset(dummy, 0, PAGE_SIZE);
+    PeterDB::NodeHeader nodeHeader;
+
+    nodeHeader.isLeaf = 0;
+    nodeHeader.isDummy = 1;
+    nodeHeader.parent = -1;
+    nodeHeader.leftSibling = -1;
+    nodeHeader.rightSibling = -1;
+
+    memmove(dummy, &nodeHeader, sizeof(nodeHeader));
 
     PeterDB::PageNum rootPage = 1;
-    memmove(dummy, &rootPage, sizeof(rootPage));
+    memmove((char *)dummy + sizeof(nodeHeader), &rootPage, sizeof(rootPage));
 
     fileHandle.openFileStream->seekp(0, std::ios::end);
     fileHandle.appendPage(dummy);
@@ -352,7 +350,7 @@ PeterDB::PageNum getRootPage(PeterDB::FileHandle &fileHandle){
     fileHandle.readPage(0, dummy);
 
     PeterDB::PageNum rootPage;
-    memmove(&rootPage, dummy, sizeof(rootPage));
+    memmove(&rootPage, dummy + sizeof(PeterDB::NodeHeader), sizeof(rootPage));
 
     return rootPage;
 }
@@ -362,11 +360,11 @@ void setRootPage(PeterDB::FileHandle &fileHandle, PeterDB::PageNum rootPage){
     memset(dummy, 0, PAGE_SIZE);
     fileHandle.readPage(0, dummy);
 
-    memmove(dummy, &rootPage, sizeof(rootPage));
+    memmove(dummy + sizeof(PeterDB::NodeHeader), &rootPage, sizeof(rootPage));
     fileHandle.writePage(0, dummy);
 }
 
-void recursiveInsertBTree(PeterDB::FileHandle &fileHandle, PeterDB::PageNum pageNumber, const PeterDB::Attribute &attribute, const void *key, const PeterDB::RID &rid, void* &newChildEntry){
+void recursiveInsertBTree(PeterDB::FileHandle &fileHandle, PeterDB::PageNum pageNumber, const PeterDB::Attribute &attribute, const void *key, const PeterDB::RID &rid, PeterDB::NewEntry *newChildEntry){
     PeterDB::NodeHeader nodeHeader = getNodeHeader(fileHandle, pageNumber);
     PeterDB::AttrLength typeLen = attribute.length;
     if(attribute.type == PeterDB::TypeVarChar) typeLen += sizeof(int);
@@ -396,19 +394,30 @@ void recursiveInsertBTree(PeterDB::FileHandle &fileHandle, PeterDB::PageNum page
 
         // if non-leaf node has enough space
         if(nonLeafNodeInfo.currentKey < nonLeafNodeInfo.maxKeys){
-            setEntry(nonLeafNodeInfo.routingKey, nonLeafNodeInfo.currentKey, typeLen, newChildEntry);
-            nonLeafNodeInfo.currentKey += 1;
-            //TODO: need to sort the routing key
-
+            insertEntry(false, nullptr, &nonLeafNodeInfo, attribute, newChildEntry->key, nullptr, &newChildEntry->pageNum);
             serializeNonLeafNode(nonLeafNodeInfo, buffer + sizeof(PeterDB::NodeHeader));
             newChildEntry = nullptr;
             fileHandle.writePage(pageNumber, buffer);
             return;
         }
         else{  // non-leaf node doesn't have enough space
+            // temp key and pointer (size: max + 1)
+            PeterDB::NonLeafNode tempNode;
+            tempNode.currentKey = nonLeafNodeInfo.currentKey;
+            tempNode.routingKey.resize((nonLeafNodeInfo.maxKeys + 1) * typeLen, 0);
+            tempNode.pointers.resize(nonLeafNodeInfo.maxKeys + 2, 0);
+
+            memmove(tempNode.routingKey.data(), nonLeafNodeInfo.routingKey.data(), nonLeafNodeInfo.currentKey * typeLen);
+            copy(nonLeafNodeInfo.pointers.begin(), nonLeafNodeInfo.pointers.end(), tempNode.pointers.begin());
+
+            // insert new key
+            insertEntry(false, nullptr, &tempNode, attribute, newChildEntry->key, nullptr, &newChildEntry->pageNum);
+
             // create a new non-leaf node
             PeterDB::PageNum newNonLeafPage = fileHandle.getNumberOfPages();
             initialNonLeafNodePage(fileHandle, attribute, nonLeafNodeInfo.maxKeys);
+            char newNodeBuffer[PAGE_SIZE];
+            PeterDB::NodeHeader newNonLeafNodeHeader = getNodeHeader(fileHandle, newNonLeafPage);
 
             // half of the entries will be moved to the new non-leaf node
             PeterDB::NonLeafNode newNonLeafNodeInfo;
@@ -417,26 +426,30 @@ void recursiveInsertBTree(PeterDB::FileHandle &fileHandle, PeterDB::PageNum page
             newNonLeafNodeInfo.routingKey.resize(newNonLeafNodeInfo.maxKeys * typeLen, 0);
             newNonLeafNodeInfo.pointers.resize(newNonLeafNodeInfo.maxKeys + 1, 0);
 
-            for (size_t i = 0; i < newNonLeafNodeInfo.currentKey; ++i) {
-                int temp;
-                getEntry(nonLeafNodeInfo.routingKey, i + nonLeafNodeInfo.currentKey / 2, typeLen, &temp);
-                setEntry(newNonLeafNodeInfo.routingKey, i, typeLen, &temp);
-                clearEntry(nonLeafNodeInfo.routingKey, i + nonLeafNodeInfo.currentKey / 2, typeLen);
-            }
-            for (size_t i = 0; i < newNonLeafNodeInfo.currentKey + 1; ++i) {
-                newNonLeafNodeInfo.pointers[i] = nonLeafNodeInfo.pointers[i + nonLeafNodeInfo.currentKey / 2];
-                nonLeafNodeInfo.pointers[i + nonLeafNodeInfo.currentKey / 2] = 0;
-            }
+            // split
+            short splitPoint = tempNode.currentKey / 2;
+            // nonLeafNodeInfo(old)得到tempNode前半
+            nonLeafNodeInfo.currentKey = splitPoint;
+            memmove(nonLeafNodeInfo.routingKey.data(), tempNode.routingKey.data(), splitPoint * typeLen);
+            memset(nonLeafNodeInfo.routingKey.data() + splitPoint * typeLen, 0, (nonLeafNodeInfo.maxKeys - splitPoint) * typeLen);
+            std::copy(tempNode.pointers.begin(), tempNode.pointers.begin() + splitPoint + 2, nonLeafNodeInfo.pointers.begin()); //記得多1
+            std::fill(nonLeafNodeInfo.pointers.begin() + splitPoint + 2, nonLeafNodeInfo.pointers.end(), 0);
 
-            // update the original node
-            nonLeafNodeInfo.currentKey = nonLeafNodeInfo.currentKey / 2;
+            // newNonLeafNode得到tempNode後半
+            newNonLeafNodeInfo.currentKey = tempNode.currentKey - splitPoint;
+            memmove(newNonLeafNodeInfo.routingKey.data(), tempNode.routingKey.data() + splitPoint * typeLen, newNonLeafNodeInfo.currentKey * typeLen);
+            std::copy(tempNode.pointers.begin() + splitPoint, tempNode.pointers.end(), newNonLeafNodeInfo.pointers.begin());
+
+            setNodeHeader(buffer, nodeHeader);
+            setNodeHeader(newNodeBuffer, newNonLeafNodeHeader);
+
             serializeNonLeafNode(nonLeafNodeInfo, buffer + sizeof(PeterDB::NodeHeader));
+            serializeNonLeafNode(newNonLeafNodeInfo, newNodeBuffer + sizeof(PeterDB::NodeHeader));
 
-            // update the new non-leaf node
-            serializeNonLeafNode(newNonLeafNodeInfo, buffer + sizeof(PeterDB::NodeHeader));
-            getEntry(newNonLeafNodeInfo.routingKey, 0, typeLen, &newChildEntry);
+            getEntry(newNonLeafNodeInfo.routingKey, 0, typeLen, newChildEntry->key);
+            newChildEntry->pageNum = newNonLeafPage;
 
-            /// if it is root(待確認是不是對的)
+            /// if it is root
             if(getRootPage(fileHandle) == pageNumber){
                 short newRootPage = fileHandle.getNumberOfPages();
                 initialNonLeafNodePage(fileHandle, attribute, nonLeafNodeInfo.maxKeys);
@@ -447,6 +460,8 @@ void recursiveInsertBTree(PeterDB::FileHandle &fileHandle, PeterDB::PageNum page
             }
 
             fileHandle.writePage(pageNumber, buffer);
+            fileHandle.writePage(newNonLeafPage, newNodeBuffer);
+
             return;
         }
     }
@@ -457,7 +472,7 @@ void recursiveInsertBTree(PeterDB::FileHandle &fileHandle, PeterDB::PageNum page
 
         // if leaf node has enough space
         if(leafNodeInfo.currentKey < leafNodeInfo.maxKeys){
-            insertEntry(leafNodeInfo, attribute, key, rid);
+            insertEntry(true, &leafNodeInfo, nullptr, attribute, &key, &rid, nullptr);
             serializeLeafNode(leafNodeInfo, buffer + sizeof(PeterDB::NodeHeader));
             newChildEntry = nullptr;
             fileHandle.writePage(pageNumber, buffer);
@@ -470,10 +485,10 @@ void recursiveInsertBTree(PeterDB::FileHandle &fileHandle, PeterDB::PageNum page
             tempNode.key.resize((leafNodeInfo.maxKeys + 1) * typeLen, 0);
             tempNode.rid.resize(leafNodeInfo.maxKeys + 1);
             memmove(tempNode.key.data(), leafNodeInfo.key.data(), leafNodeInfo.currentKey * typeLen);
-            copy(leafNodeInfo.rid.begin(), leafNodeInfo.rid.begin() + leafNodeInfo.currentKey,  tempNode.rid.begin());
+            copy(leafNodeInfo.rid.begin(), leafNodeInfo.rid.end(),  tempNode.rid.begin());
 
             // insert new key
-            insertEntry(tempNode, attribute, key, rid);
+            insertEntry(true, &tempNode, nullptr, attribute, &key, &rid, nullptr);
 
             // split
             // create a new leaf node
@@ -491,7 +506,7 @@ void recursiveInsertBTree(PeterDB::FileHandle &fileHandle, PeterDB::PageNum page
             newLeafNodeInfo.rid.resize(newLeafNodeInfo.maxKeys);
 
             // 更新原叶节点和新叶节点的键和RID
-            short splitPoint = leafNodeInfo.maxKeys / 2; // 分裂点
+            short splitPoint = tempNode.currentKey / 2; // 分裂点
 
             // leafNodeInfo(old)得到tempNode前半
             leafNodeInfo.currentKey = splitPoint;
@@ -501,7 +516,7 @@ void recursiveInsertBTree(PeterDB::FileHandle &fileHandle, PeterDB::PageNum page
             std::fill(leafNodeInfo.rid.begin() + splitPoint, leafNodeInfo.rid.end(), PeterDB::RID());
 
             // newLeafNode得到tempNode後半
-            newLeafNodeInfo.currentKey = leafNodeInfo.maxKeys + 1 - splitPoint;
+            newLeafNodeInfo.currentKey = tempNode.currentKey - splitPoint;
             memmove(newLeafNodeInfo.key.data(), tempNode.key.data() + splitPoint * typeLen, newLeafNodeInfo.currentKey * typeLen);
             std::copy(tempNode.rid.begin() + splitPoint, tempNode.rid.end(), newLeafNodeInfo.rid.begin());
 
@@ -516,7 +531,8 @@ void recursiveInsertBTree(PeterDB::FileHandle &fileHandle, PeterDB::PageNum page
             serializeLeafNode(newLeafNodeInfo, newNodeBuffer + sizeof(PeterDB::NodeHeader));
 
             // set newchildentry to the parent node
-            getEntry(newLeafNodeInfo.key, 0, typeLen, &newChildEntry);
+            getEntry(newLeafNodeInfo.key, 0, typeLen, newChildEntry->key);
+            newChildEntry->pageNum = newLeafPage;
 
             fileHandle.writePage(pageNumber, buffer);
             fileHandle.writePage(newLeafPage, newNodeBuffer);
