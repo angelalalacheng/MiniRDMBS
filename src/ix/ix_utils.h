@@ -266,6 +266,21 @@ void deserializeLeafNode(PeterDB::LeafNode& node, const char* buffer){
     }
 }
 
+PeterDB::NodeHeader getNodeHeader(PeterDB::FileHandle &fileHandle, PeterDB::PageNum pageNumber){
+    char data[PAGE_SIZE];
+    memset(data, 0, PAGE_SIZE);
+    fileHandle.readPage(pageNumber, data);
+
+    PeterDB::NodeHeader nodeHeader;
+    memmove(&nodeHeader, data, sizeof(nodeHeader));
+
+    return nodeHeader;
+}
+
+void setNodeHeader(char* buffer, PeterDB::NodeHeader &nodeHeader){
+    memmove(buffer, &nodeHeader, sizeof(nodeHeader));
+}
+
 void initialNonLeafNodePage(PeterDB::FileHandle &fileHandle, const PeterDB::Attribute &attribute, short numOfEntry){
     char node[PAGE_SIZE];
     memset(node, 0, PAGE_SIZE);
@@ -283,6 +298,7 @@ void initialNonLeafNodePage(PeterDB::FileHandle &fileHandle, const PeterDB::Attr
     nonLeafNode.routingKey.resize(numOfEntry * attribute.length, 0);
     nonLeafNode.pointers.resize(numOfEntry, 0);
 
+    setNodeHeader(node, nodeHeader);
     serializeNonLeafNode(nonLeafNode, node + sizeof(nodeHeader));
 
     fileHandle.openFileStream->seekp(0, std::ios::end);
@@ -309,6 +325,7 @@ void initialLeafNodePage(PeterDB::FileHandle &fileHandle, const PeterDB::Attribu
     leafNode.key.resize(numOfEntry * typeLen, 0);
     leafNode.rid.resize(numOfEntry);
 
+    setNodeHeader(node, nodeHeader);
     serializeLeafNode(leafNode, node + sizeof(nodeHeader));
 
     fileHandle.openFileStream->seekp(0, std::ios::end);
@@ -335,21 +352,6 @@ void dummyNode(PeterDB::FileHandle &fileHandle){ // dummy node (pageNum = 0) poi
     fileHandle.appendPage(dummy);
 }
 
-PeterDB::NodeHeader getNodeHeader(PeterDB::FileHandle &fileHandle, PeterDB::PageNum pageNumber){
-    char data[PAGE_SIZE];
-    memset(data, 0, PAGE_SIZE);
-    fileHandle.readPage(pageNumber, data);
-
-    PeterDB::NodeHeader nodeHeader;
-    memmove(&nodeHeader, data, sizeof(nodeHeader));
-
-    return nodeHeader;
-}
-
-void setNodeHeader(char* buffer, PeterDB::NodeHeader &nodeHeader){
-    memmove(buffer, &nodeHeader, sizeof(nodeHeader));
-}
-
 PeterDB::PageNum getRootPage(PeterDB::FileHandle &fileHandle){
     char dummy[PAGE_SIZE];
     memset(dummy, 0, PAGE_SIZE);
@@ -368,6 +370,21 @@ void setRootPage(PeterDB::FileHandle &fileHandle, PeterDB::PageNum rootPage){
 
     memmove(dummy + sizeof(PeterDB::NodeHeader), &rootPage, sizeof(rootPage));
     fileHandle.writePage(0, dummy);
+}
+
+void setFirstPointer(PeterDB::FileHandle &fileHandle, PeterDB::PageNum nonLeafNodeNum, PeterDB::PageNum firstPointer){
+    char buffer[PAGE_SIZE];
+    memset(buffer, 0, PAGE_SIZE);
+    fileHandle.readPage(nonLeafNodeNum, buffer);
+
+    PeterDB::NodeHeader nodeHeader = getNodeHeader(fileHandle, nonLeafNodeNum);
+    if(nodeHeader.isLeaf) return;
+
+    PeterDB::NonLeafNode nonLeafNodeInfo;
+    deserializeNonLeafNode(nonLeafNodeInfo, buffer + sizeof(PeterDB::NodeHeader));
+    nonLeafNodeInfo.pointers[0] = firstPointer;
+    serializeNonLeafNode(nonLeafNodeInfo, buffer + sizeof(PeterDB::NodeHeader));
+    fileHandle.writePage(nonLeafNodeNum, buffer);
 }
 
 void recursiveInsertBTree(PeterDB::FileHandle &fileHandle, PeterDB::PageNum pageNumber, const PeterDB::Attribute &attribute, const void *key, const PeterDB::RID &rid, PeterDB::NewEntry *newChildEntry){
@@ -439,6 +456,8 @@ void recursiveInsertBTree(PeterDB::FileHandle &fileHandle, PeterDB::PageNum page
             newNonLeafNodeInfo.routingKey.resize(newNonLeafNodeInfo.maxKeys * typeLen, 0);
             newNonLeafNodeInfo.pointers.resize(newNonLeafNodeInfo.maxKeys + 1, 0);
 
+            // TODO: if it is root key的分配會不一樣
+
             // split
             short splitPoint = tempNode.currentKey / 2;
             // nonLeafNodeInfo(old)得到tempNode前半
@@ -462,7 +481,7 @@ void recursiveInsertBTree(PeterDB::FileHandle &fileHandle, PeterDB::PageNum page
             getEntry(newNonLeafNodeInfo.routingKey, 0, typeLen, newChildEntry->key);
             newChildEntry->pageNum = newNonLeafPage;
 
-            /// if it is root
+            // TODO: if it is root
             if(getRootPage(fileHandle) == pageNumber){
                 short newRootPage = fileHandle.getNumberOfPages();
                 initialNonLeafNodePage(fileHandle, attribute, nonLeafNodeInfo.maxKeys);
@@ -553,5 +572,4 @@ void recursiveInsertBTree(PeterDB::FileHandle &fileHandle, PeterDB::PageNum page
 
 }
 
-//TODO: 要怎麼insert第一個pointer? return PageNum嗎？當pointers.empty()的時候 就把PageNum insert進去?
 #endif //PETERDB_IX_UTILS_H

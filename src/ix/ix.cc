@@ -8,28 +8,32 @@ namespace PeterDB {
     }
 
     RC IndexManager::createFile(const std::string &fileName) {
-        if(!PagedFileManager::instance().createFile(fileName)){
+        if(PagedFileManager::instance().createFile(fileName) == 0){
             return 0;
         }
         return -1;
     }
 
     RC IndexManager::destroyFile(const std::string &fileName) {
-        if(!PagedFileManager::instance().destroyFile(fileName)){
+        if(PagedFileManager::instance().destroyFile(fileName) == 0){
             return 0;
         }
         return -1;
     }
 
     RC IndexManager::openFile(const std::string &fileName, IXFileHandle &ixFileHandle) {
-        if(!PagedFileManager::instance().openFile(fileName, ixFileHandle.fileHandle)){
+        if(ixFileHandle.fileHandle.openFileStream != nullptr){
+            std::cout << "error: File already opened" << std::endl;
+            return -1;
+        }
+        if(PagedFileManager::instance().openFile(fileName, ixFileHandle.fileHandle) == 0){
             return 0;
         }
         return -1;
     }
 
     RC IndexManager::closeFile(IXFileHandle &ixFileHandle) {
-        if(!PagedFileManager::instance().closeFile(ixFileHandle.fileHandle)){
+        if(PagedFileManager::instance().closeFile(ixFileHandle.fileHandle) == 0){
             return 0;
         }
         return -1;
@@ -49,11 +53,9 @@ namespace PeterDB {
         if(ixFileHandle.fileHandle.getNumberOfPages() == 0){
             short entryInPage = getNumOfEntryInPage(attribute);
             dummyNode(ixFileHandle.fileHandle); // pageNum = 0
-            initialNonLeafNodePage(ixFileHandle.fileHandle, attribute, entryInPage);// pageNum = 1
+            initialLeafNodePage(ixFileHandle.fileHandle, attribute, entryInPage);   // pageNum = 1
             setRootPage(ixFileHandle.fileHandle, 1);
-            initialLeafNodePage(ixFileHandle.fileHandle, attribute, entryInPage);
         }
-        //recursiveInsertBTree(PeterDB::FileHandle &fileHandle, PeterDB::PageNum pageNumber, const PeterDB::Attribute &attribute, const void *key, const PeterDB::RID &rid, PeterDB::NewEntry *newChildEntry)
         NewEntry *newChildEntry = nullptr;
         recursiveInsertBTree(ixFileHandle.fileHandle, 0, attribute, key, rid, newChildEntry);
         return 0;
