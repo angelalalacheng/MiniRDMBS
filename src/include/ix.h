@@ -13,9 +13,9 @@ namespace PeterDB {
     typedef struct {
         short isLeaf;
         short isDummy;
-        PageNum parent;       // no parent then -1
-        PageNum leftSibling;  // page number of the left sibling (if is not leaf then save it -1)
-        PageNum rightSibling; // page number of the right sibling
+        int parent;       // no parent then -1
+        int leftSibling;  // page number of the left sibling (if is not leaf then save it -1)
+        int rightSibling; // page number of the right sibling
     } NodeHeader;
 
     typedef struct{
@@ -93,6 +93,12 @@ namespace PeterDB {
 
     class IX_ScanIterator {
     public:
+
+        FileHandle *fileHandle;
+        size_t currentIndex = 0;
+        Attribute attribute;
+        std::vector<void*> keys;
+        std::vector<RID> candidates;
 
         // Constructor
         IX_ScanIterator();

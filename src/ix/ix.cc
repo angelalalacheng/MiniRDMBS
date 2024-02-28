@@ -50,14 +50,13 @@ namespace PeterDB {
      */
     RC
     IndexManager::insertEntry(IXFileHandle &ixFileHandle, const Attribute &attribute, const void *key, const RID &rid) {
+        short entryInPage = getNumOfEntryInPage(attribute);
         if(ixFileHandle.fileHandle.getNumberOfPages() == 0){
-            short entryInPage = getNumOfEntryInPage(attribute);
             dummyNode(ixFileHandle.fileHandle); // pageNum = 0
             initialLeafNodePage(ixFileHandle.fileHandle, attribute, entryInPage);   // pageNum = 1
-            setRootPage(ixFileHandle.fileHandle, 1);
         }
         NewEntry *newChildEntry = nullptr;
-        recursiveInsertBTree(ixFileHandle.fileHandle, 0, attribute, key, rid, newChildEntry);
+        recursiveInsertBTree(ixFileHandle.fileHandle, 0, attribute, key, rid, newChildEntry, entryInPage);
         return 0;
     }
     /*
@@ -101,8 +100,8 @@ namespace PeterDB {
         NodeHeader nodeHeader;
 
         while (true) {
-            nodeHeader = getNodeHeader(ixFileHandle.fileHandle, currentPage);
             ixFileHandle.fileHandle.readPage(currentPage, nodeData);
+             getNodeHeader(nodeData, nodeHeader);
 
             if(nodeHeader.isLeaf){ // leaf node
                 LeafNode leafNode;
@@ -155,7 +154,74 @@ namespace PeterDB {
                           bool lowKeyInclusive,
                           bool highKeyInclusive,
                           IX_ScanIterator &ix_ScanIterator) {
-        return -1;
+        PageNum currentPage = getRootPage(ixFileHandle.fileHandle);
+        char nodeData [PAGE_SIZE];
+        NodeHeader nodeHeader;
+
+        while(true){
+            ixFileHandle.fileHandle.readPage(currentPage, nodeData);
+            getNodeHeader(nodeData, nodeHeader);
+            if(nodeHeader.isLeaf){
+                LeafNode leafNode;
+                deserializeLeafNode(leafNode, nodeData);
+                bool FindingHighKey = true;
+
+                while(FindingHighKey){
+                    for(int i = 0; i < leafNode.currentKey; i++){
+                        int temp;
+                        getEntry(leafNode.key, i, attribute.type == TypeVarChar ? 4 : sizeof (int) + attribute.length, &temp);
+                        if(temp >= *reinterpret_cast<const int*>(lowKey)){
+                            if(!lowKeyInclusive && temp == *reinterpret_cast<const int*>(lowKey)){
+                                continue;
+                            }
+                            ix_ScanIterator.candidates.emplace_back(leafNode.rid[i]);
+                            ix_ScanIterator.keys.emplace_back(static_cast<void*>(&temp));
+                        }
+                        if(temp >= *reinterpret_cast<const int*>(highKey)){
+                            if(!highKeyInclusive && temp == *reinterpret_cast<const int*>(highKey)){
+                                ix_ScanIterator.candidates.pop_back();
+                            }
+                            FindingHighKey = false;
+                            break;
+                        }
+                    }
+
+                    if(FindingHighKey){
+                        currentPage = nodeHeader.rightSibling;
+                        ixFileHandle.fileHandle.readPage(currentPage, nodeData);
+                        deserializeLeafNode(leafNode, nodeData);
+                    }
+                }
+            }
+            else{
+                NonLeafNode nonLeafNode;
+                deserializeNonLeafNode(nonLeafNode, nodeData);
+                PeterDB::PageNum nextNode = -1;
+
+                if(lowKey == nullptr){
+                    nextNode = nonLeafNode.pointers[0];
+                }
+                else{
+                    for(int i = 0; i < nonLeafNode.currentKey; i++){
+                        int temp;
+                        getEntry(nonLeafNode.routingKey, i, attribute.type == TypeVarChar ? 4 : sizeof (int) + attribute.length, &temp);
+                        if(*reinterpret_cast<const int*>(lowKey) < temp){
+                            nextNode = nonLeafNode.pointers[i];
+                            break;
+                        }
+                    }
+                    if(nextNode == -1){
+                        nextNode = nonLeafNode.pointers[nonLeafNode.currentKey];
+                    }
+                }
+                currentPage = nextNode;
+            }
+
+            ix_ScanIterator.fileHandle = &ixFileHandle.fileHandle;
+            ix_ScanIterator.attribute = attribute;
+
+            return 0;
+        }
     }
 
     RC IndexManager::printBTree(IXFileHandle &ixFileHandle, const Attribute &attribute, std::ostream &out) const {
@@ -169,7 +235,22 @@ namespace PeterDB {
     }
 
     RC IX_ScanIterator::getNextEntry(RID &rid, void *key) {
-        return -1;
+        if(candidates.empty() || keys.empty() || currentIndex >= candidates.size()){
+            return IX_EOF;
+        }
+
+        rid = candidates[currentIndex];
+        if(attribute.type == TypeVarChar){
+            int length;
+            memmove(&length, keys[currentIndex], 4);
+            memmove(key, keys[currentIndex], 4 + length);
+        }
+        else{
+            memmove(key, keys[currentIndex], 4);
+        }
+
+        currentIndex ++;
+        return 0;
     }
 
     RC IX_ScanIterator::close() {
