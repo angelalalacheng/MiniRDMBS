@@ -53,7 +53,6 @@ namespace PeterDB {
         short entryInPage = getNumOfEntryInPage(attribute);
         if(ixFileHandle.fileHandle.getNumberOfPages() == 0){
             dummyNode(ixFileHandle.fileHandle); // pageNum = 0
-            initialLeafNodePage(ixFileHandle.fileHandle, attribute, entryInPage);   // pageNum = 1
         }
         NewEntry *newChildEntry = nullptr;
         recursiveInsertBTree(ixFileHandle.fileHandle, 0, attribute, key, rid, newChildEntry, entryInPage);
@@ -69,31 +68,7 @@ namespace PeterDB {
      */
     RC
     IndexManager::deleteEntry(IXFileHandle &ixFileHandle, const Attribute &attribute, const void *key, const RID &rid) {
-        AttrLength typeLen = attribute.type == TypeVarChar ? 4 : sizeof (int) + attribute.length;
-        SearchEntryInfo searchEntryInfo = searchEntry(ixFileHandle, attribute, key);
-
-        if(searchEntryInfo.targetIndex == -1) return -1;
-
-        char nodeData [PAGE_SIZE];
-        ixFileHandle.fileHandle.readPage(searchEntryInfo.targetPage, nodeData);
-
-        LeafNode leafNode;
-        deserializeLeafNode(leafNode, nodeData);
-
-        clearEntry(leafNode.key, searchEntryInfo.targetIndex, typeLen);
-        leafNode.rid.erase(leafNode.rid.begin() + searchEntryInfo.targetIndex);
-        leafNode.rid.emplace_back();
-        leafNode.currentKey--;
-
-        serializeLeafNode(leafNode, nodeData);
-
-        ixFileHandle.fileHandle.writePage(searchEntryInfo.targetPage, nodeData);
-
-        return 0;
-    }
-
-    SearchEntryInfo IndexManager::searchEntry(IXFileHandle &ixFileHandle, const Attribute &attribute, const void *key) {
-        AttrLength typeLen = attribute.type == TypeVarChar ? 4 : sizeof (int) + attribute.length;
+        AttrLength typeLen = attribute.type == TypeVarChar ? sizeof (int) + attribute.length : 4;
         PageNum currentPage = getRootPage(ixFileHandle.fileHandle);
 
         char nodeData [PAGE_SIZE];
@@ -101,11 +76,60 @@ namespace PeterDB {
 
         while (true) {
             ixFileHandle.fileHandle.readPage(currentPage, nodeData);
-             getNodeHeader(nodeData, nodeHeader);
+            getNodeHeader(nodeData, nodeHeader);
 
             if(nodeHeader.isLeaf){ // leaf node
                 LeafNode leafNode;
-                deserializeLeafNode(leafNode, nodeData);
+                deserializeLeafNode(leafNode, nodeData + sizeof (NodeHeader));
+                for(int i = 0; i < leafNode.currentKey; i++){
+                    int temp;
+                    getEntry(leafNode.key, i, typeLen, &temp);
+                    if(*reinterpret_cast<const int*>(key) == temp){
+                        clearEntry(leafNode.key, i, typeLen);
+                        leafNode.rid.erase(leafNode.rid.begin() + i);
+                        leafNode.rid.emplace_back();
+                        leafNode.currentKey--;
+                        serializeLeafNode(leafNode, nodeData + sizeof (NodeHeader));
+                        ixFileHandle.fileHandle.writePage(currentPage, nodeData);
+                        return 0;
+                    }
+                }
+                return -1;
+            }
+            else{ // non-leaf node
+                NonLeafNode nonLeafNode;
+                deserializeNonLeafNode(nonLeafNode, nodeData + sizeof (NodeHeader));
+                PeterDB::PageNum nextNode = -1;
+                for(int i = 0; i < nonLeafNode.currentKey; i++){
+                    int temp;
+                    getEntry(nonLeafNode.routingKey, i, typeLen, &temp);
+                    if(*reinterpret_cast<const int*>(key) < temp){
+                        nextNode = nonLeafNode.pointers[i];
+                    }
+                }
+                if(nextNode == -1){
+                    nextNode = nonLeafNode.pointers[nonLeafNode.currentKey];
+                }
+
+                currentPage = nextNode;
+            }
+        }
+    }
+
+    SearchEntryInfo IndexManager::searchEntry(IXFileHandle &ixFileHandle, const Attribute &attribute, const void *key) {
+        AttrLength typeLen = attribute.type == TypeVarChar ? sizeof (int) + attribute.length : 4;
+        PageNum currentPage = getRootPage(ixFileHandle.fileHandle);
+
+        char nodeData [PAGE_SIZE];
+        NodeHeader nodeHeader;
+
+        while (true) {
+            ixFileHandle.fileHandle.readPage(currentPage, nodeData);
+            getNodeHeader(nodeData, nodeHeader);
+
+            if(nodeHeader.isLeaf){ // leaf node
+                LeafNode leafNode;
+                deserializeLeafNode(leafNode, nodeData + sizeof (NodeHeader));
                 SearchEntryInfo searchEntryInfo;
                 searchEntryInfo.targetIndex = -1;
                 for(int i = 0; i < leafNode.currentKey; i++){
@@ -121,7 +145,7 @@ namespace PeterDB {
             }
             else{ // non-leaf node
                 NonLeafNode nonLeafNode;
-                deserializeNonLeafNode(nonLeafNode, nodeData);
+                deserializeNonLeafNode(nonLeafNode, nodeData + sizeof (NodeHeader));
                 PeterDB::PageNum nextNode = -1;
                 for(int i = 0; i < nonLeafNode.currentKey; i++){
                     int temp;
@@ -154,31 +178,39 @@ namespace PeterDB {
                           bool lowKeyInclusive,
                           bool highKeyInclusive,
                           IX_ScanIterator &ix_ScanIterator) {
+        if(!ixFileHandle.fileHandle.openFileStream->is_open()) return -1;
+
         PageNum currentPage = getRootPage(ixFileHandle.fileHandle);
         char nodeData [PAGE_SIZE];
         NodeHeader nodeHeader;
+        int intLowKey, intHighKey;
+        if(lowKey == nullptr) intLowKey = INT_MIN;
+        else intLowKey = *reinterpret_cast<const int*>(lowKey);
+
+        if(highKey == nullptr) intHighKey = INT_MAX;
+        else intHighKey = *reinterpret_cast<const int*>(highKey);
 
         while(true){
             ixFileHandle.fileHandle.readPage(currentPage, nodeData);
             getNodeHeader(nodeData, nodeHeader);
             if(nodeHeader.isLeaf){
                 LeafNode leafNode;
-                deserializeLeafNode(leafNode, nodeData);
+                deserializeLeafNode(leafNode, nodeData + sizeof (NodeHeader));
                 bool FindingHighKey = true;
 
                 while(FindingHighKey){
                     for(int i = 0; i < leafNode.currentKey; i++){
                         int temp;
                         getEntry(leafNode.key, i, attribute.type == TypeVarChar ? 4 : sizeof (int) + attribute.length, &temp);
-                        if(temp >= *reinterpret_cast<const int*>(lowKey)){
-                            if(!lowKeyInclusive && temp == *reinterpret_cast<const int*>(lowKey)){
+                        if(temp >= intLowKey){
+                            if(!lowKeyInclusive && temp == intLowKey){
                                 continue;
                             }
                             ix_ScanIterator.candidates.emplace_back(leafNode.rid[i]);
                             ix_ScanIterator.keys.emplace_back(static_cast<void*>(&temp));
                         }
-                        if(temp >= *reinterpret_cast<const int*>(highKey)){
-                            if(!highKeyInclusive && temp == *reinterpret_cast<const int*>(highKey)){
+                        if(temp >= intHighKey){
+                            if(!highKeyInclusive && temp == intHighKey){
                                 ix_ScanIterator.candidates.pop_back();
                             }
                             FindingHighKey = false;
@@ -187,9 +219,14 @@ namespace PeterDB {
                     }
 
                     if(FindingHighKey){
-                        currentPage = nodeHeader.rightSibling;
-                        ixFileHandle.fileHandle.readPage(currentPage, nodeData);
-                        deserializeLeafNode(leafNode, nodeData);
+                        if(nodeHeader.rightSibling == -1){ // no more pages
+                            FindingHighKey = false;
+                        }
+                        else{
+                            currentPage = nodeHeader.rightSibling;
+                            ixFileHandle.fileHandle.readPage(currentPage, nodeData);
+                            deserializeLeafNode(leafNode, nodeData);
+                        }
                     }
                 }
             }
@@ -225,7 +262,12 @@ namespace PeterDB {
     }
 
     RC IndexManager::printBTree(IXFileHandle &ixFileHandle, const Attribute &attribute, std::ostream &out) const {
+        AttrLength typeLen = attribute.type == TypeVarChar ? 4 : sizeof (int) + attribute.length;
+        PageNum currentPage = getRootPage(ixFileHandle.fileHandle);
 
+        recursiveGenerateJsonString(ixFileHandle.fileHandle, currentPage, out);
+
+        return 0;
     }
 
     IX_ScanIterator::IX_ScanIterator() {
@@ -254,7 +296,11 @@ namespace PeterDB {
     }
 
     RC IX_ScanIterator::close() {
-        return -1;
+        candidates.clear();
+        keys.clear();
+        currentIndex = 0;
+        fileHandle = nullptr;
+        return 0;
     }
 
     IXFileHandle::IXFileHandle() {
