@@ -369,26 +369,25 @@ void setRootPage(PeterDB::FileHandle &fileHandle, PeterDB::PageNum rootPage){
     fileHandle.writePage(0, dummy);
 }
 
-void setFirstPointer(PeterDB::FileHandle &fileHandle, PeterDB::PageNum nonLeafNodeNum, PeterDB::PageNum firstPointer){
-    char buffer[PAGE_SIZE];
-    memset(buffer, 0, PAGE_SIZE);
-    fileHandle.readPage(nonLeafNodeNum, buffer);
-
+void setFirstPointer(char* node, PeterDB::PageNum firstPointer){
     PeterDB::NodeHeader nodeHeader;
-    getNodeHeader(buffer, nodeHeader);
+    getNodeHeader(node, nodeHeader);
     if(nodeHeader.isLeaf) return;
 
     PeterDB::NonLeafNode nonLeafNodeInfo;
-    deserializeNonLeafNode(nonLeafNodeInfo, buffer + sizeof(PeterDB::NodeHeader));
+    deserializeNonLeafNode(nonLeafNodeInfo, node + sizeof(PeterDB::NodeHeader));
     nonLeafNodeInfo.pointers[0] = firstPointer;
-    serializeNonLeafNode(nonLeafNodeInfo, buffer + sizeof(PeterDB::NodeHeader));
-    fileHandle.writePage(nonLeafNodeNum, buffer);
+    serializeNonLeafNode(nonLeafNodeInfo, node + sizeof(PeterDB::NodeHeader));
 }
 
-void recursiveInsertBTree(PeterDB::FileHandle &fileHandle, PeterDB::PageNum pageNumber, const PeterDB::Attribute &attribute, const void *key, const PeterDB::RID &rid, PeterDB::NewEntry *newChildEntry, short entryInPage){
+void setFirstPointer( PeterDB::NonLeafNode &nonLeafNodeInfo, PeterDB::PageNum firstPointer){
+    nonLeafNodeInfo.pointers[0] = firstPointer;
+}
+
+void recursiveInsertBTree(PeterDB::FileHandle &fileHandle, PeterDB::PageNum pageNumber, const PeterDB::Attribute &attribute, const void *key, const PeterDB::RID &rid, PeterDB::NewEntry*& newChildEntry, short entryInPage){
     PeterDB::AttrLength typeLen = attribute.type == PeterDB::TypeVarChar ? sizeof (int) + attribute.length : 4;
 
-    // only dummy node in file
+    // Special case: only dummy node in file
     if(fileHandle.getNumberOfPages() == 1) {
         char buffer[PAGE_SIZE];
         initialLeafNodePage(fileHandle, attribute, entryInPage, buffer);
@@ -437,12 +436,14 @@ void recursiveInsertBTree(PeterDB::FileHandle &fileHandle, PeterDB::PageNum page
         if(nodeHeader.isDummy && fileHandle.getNumberOfPages() == 3){
             PeterDB::PageNum newRootPage = fileHandle.getNumberOfPages();
             char newRootBuffer[PAGE_SIZE];
-            initialNonLeafNodePage(fileHandle, attribute, nonLeafNodeInfo.maxKeys, newRootBuffer);
-            fileHandle.readPage(newRootPage, newRootBuffer);
+            initialNonLeafNodePage(fileHandle, attribute, entryInPage, newRootBuffer);
+
             PeterDB::NonLeafNode newRootNodeInfo;
             deserializeNonLeafNode(newRootNodeInfo, newRootBuffer + sizeof(PeterDB::NodeHeader));
-            setFirstPointer(fileHandle, newRootPage, 1);
+
+            setFirstPointer(newRootNodeInfo, 1);
             insertEntry(false, nullptr, &newRootNodeInfo, attribute, newChildEntry->key, nullptr, &newChildEntry->pageNum);
+
             setRootPage(fileHandle, newRootPage);
             serializeNonLeafNode(newRootNodeInfo, newRootBuffer + sizeof(PeterDB::NodeHeader));
             fileHandle.writePage(newRootPage, newRootBuffer);
@@ -504,7 +505,7 @@ void recursiveInsertBTree(PeterDB::FileHandle &fileHandle, PeterDB::PageNum page
             getEntry(newNonLeafNodeInfo.routingKey, 0, typeLen, newChildEntry->key);
             newChildEntry->pageNum = newNonLeafPage;
 
-            // TODO: if it is root
+            // TODO: if it is root???
             if(getRootPage(fileHandle) == pageNumber){
                 short newRootPage = fileHandle.getNumberOfPages();
                 char newRootBuffer[PAGE_SIZE];
@@ -525,7 +526,7 @@ void recursiveInsertBTree(PeterDB::FileHandle &fileHandle, PeterDB::PageNum page
 
         // if leaf node has enough space
         if(leafNodeInfo.currentKey < leafNodeInfo.maxKeys){
-            insertEntry(true, &leafNodeInfo, nullptr, attribute, &key, &rid, nullptr);
+            insertEntry(true, &leafNodeInfo, nullptr, attribute, key, &rid, nullptr);
             serializeLeafNode(leafNodeInfo, buffer + sizeof(PeterDB::NodeHeader));
             newChildEntry = nullptr;
             fileHandle.writePage(pageNumber, buffer);
@@ -541,22 +542,19 @@ void recursiveInsertBTree(PeterDB::FileHandle &fileHandle, PeterDB::PageNum page
             copy(leafNodeInfo.rid.begin(), leafNodeInfo.rid.end(),  tempNode.rid.begin());
 
             // insert new key
-            insertEntry(true, &tempNode, nullptr, attribute, &key, &rid, nullptr);
+            insertEntry(true, &tempNode, nullptr, attribute, key, &rid, nullptr);
 
             // split
             // create a new leaf node
             PeterDB::PageNum newLeafPage = fileHandle.getNumberOfPages();
             char newNodeBuffer[PAGE_SIZE];
-            initialLeafNodePage(fileHandle, attribute, leafNodeInfo.maxKeys, newNodeBuffer);
+            initialLeafNodePage(fileHandle, attribute, entryInPage,newNodeBuffer);
             PeterDB::NodeHeader newLeafNodeHeader;
             getNodeHeader(newNodeBuffer, newLeafNodeHeader);
 
             // half of the entries will be moved to the new leaf node
             PeterDB::LeafNode newLeafNodeInfo;
-            newLeafNodeInfo.currentKey = leafNodeInfo.currentKey / 2 + 1;
-            newLeafNodeInfo.maxKeys = leafNodeInfo.maxKeys;
-            newLeafNodeInfo.key.resize(newLeafNodeInfo.maxKeys * typeLen, 0);
-            newLeafNodeInfo.rid.resize(newLeafNodeInfo.maxKeys);
+            deserializeLeafNode(newLeafNodeInfo, newNodeBuffer + sizeof(PeterDB::NodeHeader));
 
             // 更新原叶节点和新叶节点的键和RID
             short splitPoint = tempNode.currentKey / 2; // 分裂点
@@ -584,6 +582,8 @@ void recursiveInsertBTree(PeterDB::FileHandle &fileHandle, PeterDB::PageNum page
             serializeLeafNode(newLeafNodeInfo, newNodeBuffer + sizeof(PeterDB::NodeHeader));
 
             // set newchildentry to the parent node
+            newChildEntry = new PeterDB::NewEntry();
+            newChildEntry->key = new char[typeLen];
             getEntry(newLeafNodeInfo.key, 0, typeLen, newChildEntry->key);
             newChildEntry->pageNum = newLeafPage;
 

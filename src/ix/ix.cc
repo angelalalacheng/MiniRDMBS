@@ -195,25 +195,27 @@ namespace PeterDB {
             getNodeHeader(nodeData, nodeHeader);
             if(nodeHeader.isLeaf){
                 LeafNode leafNode;
-                deserializeLeafNode(leafNode, nodeData + sizeof (NodeHeader));
                 bool FindingHighKey = true;
 
                 while(FindingHighKey){
+                    getNodeHeader(nodeData, nodeHeader);
+                    deserializeLeafNode(leafNode, nodeData + sizeof (NodeHeader));
                     for(int i = 0; i < leafNode.currentKey; i++){
-                        int temp;
-                        getEntry(leafNode.key, i, attribute.type == TypeVarChar ? 4 : sizeof (int) + attribute.length, &temp);
-                        if(temp >= intLowKey){
-                            if(!lowKeyInclusive && temp == intLowKey){
+                        int* temp = new int;
+                        getEntry(leafNode.key, i, attribute.type == TypeVarChar ? sizeof (int) + attribute.length : 4, temp);
+                        if(*temp >= intLowKey){
+                            if(!lowKeyInclusive && *temp == intLowKey){
                                 continue;
                             }
                             ix_ScanIterator.candidates.emplace_back(leafNode.rid[i]);
-                            ix_ScanIterator.keys.emplace_back(static_cast<void*>(&temp));
+                            ix_ScanIterator.keys.emplace_back(temp);
                         }
-                        if(temp >= intHighKey){
-                            if(!highKeyInclusive && temp == intHighKey){
+                        if(*temp >= intHighKey){
+                            if(!highKeyInclusive && *temp == intHighKey){
                                 ix_ScanIterator.candidates.pop_back();
                             }
                             FindingHighKey = false;
+                            delete temp;
                             break;
                         }
                     }
@@ -225,14 +227,19 @@ namespace PeterDB {
                         else{
                             currentPage = nodeHeader.rightSibling;
                             ixFileHandle.fileHandle.readPage(currentPage, nodeData);
-                            deserializeLeafNode(leafNode, nodeData);
                         }
                     }
                 }
+
+                // all leaf nodes finish
+                ix_ScanIterator.fileHandle = &ixFileHandle.fileHandle;
+                ix_ScanIterator.attribute = attribute;
+                return 0;
+
             }
             else{
                 NonLeafNode nonLeafNode;
-                deserializeNonLeafNode(nonLeafNode, nodeData);
+                deserializeNonLeafNode(nonLeafNode, nodeData + sizeof (NodeHeader));
                 PeterDB::PageNum nextNode = -1;
 
                 if(lowKey == nullptr){
@@ -253,11 +260,6 @@ namespace PeterDB {
                 }
                 currentPage = nextNode;
             }
-
-            ix_ScanIterator.fileHandle = &ixFileHandle.fileHandle;
-            ix_ScanIterator.attribute = attribute;
-
-            return 0;
         }
     }
 
