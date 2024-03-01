@@ -14,7 +14,7 @@ namespace PeterDB {
         short isLeaf;
         short isDummy;
         int parent;       // no parent then -1
-        int leftSibling;  // page number of the left sibling (if is not leaf then save it -1)
+//        int leftSibling;  // page number of the left sibling (if is not leaf then save it -1)
         int rightSibling; // page number of the right sibling
     } NodeHeader;
 

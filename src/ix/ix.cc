@@ -34,6 +34,11 @@ namespace PeterDB {
 
     RC IndexManager::closeFile(IXFileHandle &ixFileHandle) {
         if(PagedFileManager::instance().closeFile(ixFileHandle.fileHandle) == 0){
+            std::cout << "File closed" << std::endl;
+            if(ixFileHandle.fileHandle.openFileStream != nullptr){
+                ixFileHandle.fileHandle.openFileStream.reset();
+                        std::cout << "fileHandle.openFileStream != nullptr" << std::endl;
+            }
             return 0;
         }
         return -1;
@@ -248,7 +253,7 @@ namespace PeterDB {
                 else{
                     for(int i = 0; i < nonLeafNode.currentKey; i++){
                         int temp;
-                        getEntry(nonLeafNode.routingKey, i, attribute.type == TypeVarChar ? 4 : sizeof (int) + attribute.length, &temp);
+                        getEntry(nonLeafNode.routingKey, i, attribute.type == TypeVarChar ? sizeof (int) + attribute.length : 4, &temp);
                         if(*reinterpret_cast<const int*>(lowKey) < temp){
                             nextNode = nonLeafNode.pointers[i];
                             break;
