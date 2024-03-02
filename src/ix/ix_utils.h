@@ -122,7 +122,10 @@ void insertFloatEntry(PeterDB::LeafNode* leafNodeInfo, PeterDB::NonLeafNode* non
         char midData[typeLen];
         getEntry(arr, mid, typeLen, midData);
         float midValue = *reinterpret_cast<float*>(midData);
-        if (midValue == target) return;
+        if (midValue == target) {
+            left = mid + 1;
+            break;
+        }
         else if (target < midValue) right = mid;
         else left = mid + 1;
     }
@@ -167,7 +170,10 @@ void insertVarCharEntry(PeterDB::LeafNode* leafNodeInfo, PeterDB::NonLeafNode* n
         midValue.resize(tempLen);
         memmove(&midValue[0], (char *)midData + sizeof (int), tempLen);
 
-        if (midValue == target) return;
+        if (midValue == target) {
+            left = mid + 1;
+            break;
+        }
         else if (target < midValue) right = mid;
         else left = mid + 1;
     }
