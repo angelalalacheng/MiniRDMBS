@@ -97,7 +97,7 @@ namespace PeterDB {
         FileHandle *fileHandle;
         size_t currentIndex = 0;
         Attribute attribute;
-        std::vector<void*> keys;
+        std::vector<char> keys;
         std::vector<RID> candidates;
 
         // Constructor

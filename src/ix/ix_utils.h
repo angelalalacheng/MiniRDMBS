@@ -13,10 +13,40 @@
 #include <memory>
 
 short getNumOfEntryInPage(const PeterDB::Attribute &attribute){
-    short size = attribute.length + sizeof(PeterDB::RID) * 2;
+    short size = attribute.length + sizeof(PeterDB::RID) + sizeof(PeterDB::PageNum); // sizeof(RID): 8 bytes, sizeof(PageNum): 4 bytes
+    // leafNode: size of key + size of RID
+    // nonLeafNode: size of key + size of PageNum (還會多一個pointer)
     short numOfNode = (PAGE_SIZE - sizeof(PeterDB::NodeHeader))/ size;
 
     return numOfNode;
+}
+
+int compareKey(const char* key1, const char* key2, const PeterDB::Attribute& attribute, bool compareLow) {
+    if (attribute.type == PeterDB::TypeInt) {
+        if(compareLow && key2 == nullptr) return 1;
+        if(!compareLow && key2 == nullptr) return -1;
+        int k1 = *reinterpret_cast<const int*>(key1);
+        int k2 = *reinterpret_cast<const int*>(key2);
+        return (k1 > k2) - (k1 < k2);
+    }
+    else if (attribute.type == PeterDB::TypeReal) {
+        if(compareLow && key2 == nullptr) return 1;
+        if(!compareLow && key2 == nullptr) return -1;
+        float k1 = *reinterpret_cast<const float*>(key1);
+        float k2 = *reinterpret_cast<const float*>(key2);
+        return (k1 > k2) - (k1 < k2);
+    }
+    else if (attribute.type == PeterDB::TypeVarChar) {
+        if(compareLow && key2 == nullptr) return 1;
+        if(!compareLow && key2 == nullptr) return -1;
+        int len1, len2;
+        memmove(&len1, key1, sizeof(int));
+        memmove(&len2, key2, sizeof(int));
+        std::string k1(static_cast<const char*>(key1) + sizeof(int), len1);
+        std::string k2(static_cast<const char*>(key2) + sizeof(int), len2);
+        return k1.compare(k2);
+    }
+    return -2;
 }
 
 void setEntry(std::vector<char>& arr, size_t index, size_t typeLen, const void* entryData) {
@@ -55,7 +85,10 @@ void insertIntEntry(PeterDB::LeafNode* leafNodeInfo, PeterDB::NonLeafNode* nonLe
         char midData[typeLen];
         getEntry(arr, mid, typeLen, midData);
         int midValue = *reinterpret_cast<int*>(midData);
-        if (midValue == target) return;
+        if (midValue == target) {
+            left = mid + 1;
+            break;
+        }
         else if (target < midValue) right = mid;
         else left = mid + 1;
     }

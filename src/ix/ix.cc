@@ -37,7 +37,6 @@ namespace PeterDB {
             std::cout << "File closed" << std::endl;
             if(ixFileHandle.fileHandle.openFileStream != nullptr){
                 ixFileHandle.fileHandle.openFileStream.reset();
-                        std::cout << "fileHandle.openFileStream != nullptr" << std::endl;
             }
             return 0;
         }
@@ -87,9 +86,9 @@ namespace PeterDB {
                 LeafNode leafNode;
                 deserializeLeafNode(leafNode, nodeData + sizeof (NodeHeader));
                 for(int i = 0; i < leafNode.currentKey; i++){
-                    int temp;
-                    getEntry(leafNode.key, i, typeLen, &temp);
-                    if(*reinterpret_cast<const int*>(key) == temp){
+                    char temp[typeLen];
+                    getEntry(leafNode.key, i, typeLen, temp);
+                    if(compareKey((char *)key, temp, attribute, true) == 0 && leafNode.rid[i].pageNum == rid.pageNum && leafNode.rid[i].slotNum == rid.slotNum){
                         clearEntry(leafNode.key, i, typeLen);
                         leafNode.rid.erase(leafNode.rid.begin() + i);
                         leafNode.rid.emplace_back();
@@ -106,10 +105,11 @@ namespace PeterDB {
                 deserializeNonLeafNode(nonLeafNode, nodeData + sizeof (NodeHeader));
                 PeterDB::PageNum nextNode = -1;
                 for(int i = 0; i < nonLeafNode.currentKey; i++){
-                    int temp;
-                    getEntry(nonLeafNode.routingKey, i, typeLen, &temp);
-                    if(*reinterpret_cast<const int*>(key) < temp){
+                    char temp[typeLen];
+                    getEntry(nonLeafNode.routingKey, i, typeLen, temp);
+                    if(compareKey((char *)key, temp, attribute, true) < 0){
                         nextNode = nonLeafNode.pointers[i];
+                        break;
                     }
                 }
                 if(nextNode == -1){
@@ -183,17 +183,12 @@ namespace PeterDB {
                           bool lowKeyInclusive,
                           bool highKeyInclusive,
                           IX_ScanIterator &ix_ScanIterator) {
-        if(!ixFileHandle.fileHandle.openFileStream->is_open()) return -1;
+        if(ixFileHandle.fileHandle.openFileStream == nullptr) return -1;
+        AttrLength typeLen = attribute.type == TypeVarChar ? sizeof (int) + attribute.length : 4;
 
         PageNum currentPage = getRootPage(ixFileHandle.fileHandle);
         char nodeData [PAGE_SIZE];
         NodeHeader nodeHeader;
-        int intLowKey, intHighKey;
-        if(lowKey == nullptr) intLowKey = INT_MIN;
-        else intLowKey = *reinterpret_cast<const int*>(lowKey);
-
-        if(highKey == nullptr) intHighKey = INT_MAX;
-        else intHighKey = *reinterpret_cast<const int*>(highKey);
 
         while(true){
             ixFileHandle.fileHandle.readPage(currentPage, nodeData);
@@ -206,22 +201,20 @@ namespace PeterDB {
                     getNodeHeader(nodeData, nodeHeader);
                     deserializeLeafNode(leafNode, nodeData + sizeof (NodeHeader));
                     for(int i = 0; i < leafNode.currentKey; i++){
-                        int* temp = new int;
+                        char temp[typeLen];
                         getEntry(leafNode.key, i, attribute.type == TypeVarChar ? sizeof (int) + attribute.length : 4, temp);
-                        if(*temp >= intLowKey){
-                            if(!lowKeyInclusive && *temp == intLowKey){
-                                continue;
+                        int comparisonLow = compareKey(temp, (char *)lowKey, attribute, true);
+                        int comparisonHigh = compareKey(temp, (char *)highKey, attribute, false);
+
+                        if(comparisonLow > 0 || (lowKeyInclusive && comparisonLow == 0)) {
+                            if(comparisonHigh < 0 || (highKeyInclusive && comparisonHigh == 0)) {
+                                ix_ScanIterator.candidates.emplace_back(leafNode.rid[i]);
+                                ix_ScanIterator.keys.insert(ix_ScanIterator.keys.end(), temp, temp + typeLen);
                             }
-                            ix_ScanIterator.candidates.emplace_back(leafNode.rid[i]);
-                            ix_ScanIterator.keys.emplace_back(temp);
-                        }
-                        if(*temp >= intHighKey){
-                            if(!highKeyInclusive && *temp == intHighKey){
-                                ix_ScanIterator.candidates.pop_back();
+                            else {
+                                FindingHighKey = false;
+                                break;
                             }
-                            FindingHighKey = false;
-                            delete temp;
-                            break;
                         }
                     }
 
@@ -240,7 +233,6 @@ namespace PeterDB {
                 ix_ScanIterator.fileHandle = &ixFileHandle.fileHandle;
                 ix_ScanIterator.attribute = attribute;
                 return 0;
-
             }
             else{
                 NonLeafNode nonLeafNode;
@@ -252,9 +244,9 @@ namespace PeterDB {
                 }
                 else{
                     for(int i = 0; i < nonLeafNode.currentKey; i++){
-                        int temp;
-                        getEntry(nonLeafNode.routingKey, i, attribute.type == TypeVarChar ? sizeof (int) + attribute.length : 4, &temp);
-                        if(*reinterpret_cast<const int*>(lowKey) < temp){
+                        char temp[typeLen];
+                        getEntry(nonLeafNode.routingKey, i, attribute.type == TypeVarChar ? sizeof (int) + attribute.length : 4, temp);
+                        if(compareKey(temp, (char *)lowKey, attribute, true) >= 0){
                             nextNode = nonLeafNode.pointers[i];
                             break;
                         }
@@ -288,15 +280,9 @@ namespace PeterDB {
             return IX_EOF;
         }
 
+        AttrLength typeLen = attribute.type == TypeVarChar ? sizeof (int) + attribute.length : 4;
         rid = candidates[currentIndex];
-        if(attribute.type == TypeVarChar){
-            int length;
-            memmove(&length, keys[currentIndex], 4);
-            memmove(key, keys[currentIndex], 4 + length);
-        }
-        else{
-            memmove(key, keys[currentIndex], 4);
-        }
+        memmove(key, &keys[currentIndex * typeLen], typeLen);
 
         currentIndex ++;
         return 0;
