@@ -14,20 +14,20 @@ namespace PeterDB {
         short isLeaf;
         short isDummy;
         int parent;       // no parent then -1
-//        int leftSibling;  // page number of the left sibling (if is not leaf then save it -1)
         int rightSibling; // page number of the right sibling
     } NodeHeader;
 
     typedef struct{
         short currentKey;
-        short maxKeys;
+        short freeSpace;
         std::vector<char> routingKey;
+//        std::vector<RID> rid;
         std::vector<PageNum> pointers;
     } NonLeafNode;
 
     typedef struct {
         short currentKey;
-        short maxKeys;
+        short freeSpace;
         std::vector<char> key;
         std::vector<RID> rid;
     } LeafNode;
@@ -35,6 +35,7 @@ namespace PeterDB {
     typedef struct {
         void *key;
         PageNum pageNum;
+//        RID rid;
     } NewEntry;
 
     typedef struct {

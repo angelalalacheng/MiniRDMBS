@@ -54,12 +54,12 @@ namespace PeterDB {
      */
     RC
     IndexManager::insertEntry(IXFileHandle &ixFileHandle, const Attribute &attribute, const void *key, const RID &rid) {
-        short entryInPage = getNumOfEntryInPage(attribute);
+//        short entryInPage = getNumOfEntryInPage(attribute);
         if(ixFileHandle.fileHandle.getNumberOfPages() == 0){
             dummyNode(ixFileHandle.fileHandle); // pageNum = 0
         }
         NewEntry *newChildEntry = nullptr;
-        recursiveInsertBTree(ixFileHandle.fileHandle, 0, attribute, key, rid, newChildEntry, entryInPage);
+        recursiveInsertBTree(ixFileHandle.fileHandle, 0, attribute, key, rid, newChildEntry);
         return 0;
     }
     /*
@@ -91,8 +91,8 @@ namespace PeterDB {
                     if(compareKey((char *)key, temp, attribute, true) == 0 && leafNode.rid[i].pageNum == rid.pageNum && leafNode.rid[i].slotNum == rid.slotNum){
                         clearEntry(leafNode.key, i, typeLen);
                         leafNode.rid.erase(leafNode.rid.begin() + i);
-                        leafNode.rid.emplace_back();
                         leafNode.currentKey--;
+                        leafNode.freeSpace += (typeLen + sizeof (RID));
                         serializeLeafNode(leafNode, nodeData + sizeof (NodeHeader));
                         ixFileHandle.fileHandle.writePage(currentPage, nodeData);
                         return 0;
@@ -248,7 +248,7 @@ namespace PeterDB {
                         char temp[typeLen];
                         getEntry(nonLeafNode.routingKey, i, attribute.type == TypeVarChar ? sizeof (int) + attribute.length : 4, temp);
                         // TODO: check if the comparison is correct
-                        if(compareKey(temp, (char *)lowKey, attribute, true) >= 0){
+                        if(compareKey(temp, (char *)lowKey, attribute, true) > 0){
                             nextNode = nonLeafNode.pointers[i];
                             break;
                         }
