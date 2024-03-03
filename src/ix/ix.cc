@@ -273,7 +273,7 @@ namespace PeterDB {
 
         out << outputJsonString;
 
-//        std::cout<< outputJsonString << std::endl;
+        std::cout<< outputJsonString << std::endl;
 
         return 0;
     }
