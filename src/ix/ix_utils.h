@@ -409,7 +409,7 @@ void setRootPage(PeterDB::FileHandle &fileHandle, PeterDB::PageNum rootPage){
     fileHandle.writePage(0, dummy);
 }
 
-void setFirstPointer( PeterDB::NonLeafNode &nonLeafNodeInfo, PeterDB::PageNum firstPointer){
+void setFirstPointer(PeterDB::NonLeafNode &nonLeafNodeInfo, PeterDB::PageNum firstPointer){
     nonLeafNodeInfo.pointers[0] = firstPointer;
 }
 
@@ -438,18 +438,18 @@ PeterDB::PageNum recursiveInsertBTree(PeterDB::FileHandle &fileHandle, PeterDB::
         PeterDB::NonLeafNode nonLeafNodeInfo;
         deserializeNonLeafNode(nonLeafNodeInfo, buffer + sizeof(PeterDB::NodeHeader));
         PeterDB::PageNum nextNode = -1;
+
         // find the routing key
         if(nodeHeader.isDummy){
-            // 如果現在沒有root（請新增一個node）
             PeterDB::PageNum rootPage = getRootPage(fileHandle);
             nextNode = rootPage;
         }
         else{
             for (size_t i = 0; i < nonLeafNodeInfo.currentKey; ++i) {
-                int temp;
-                getEntry(nonLeafNodeInfo.routingKey, i, typeLen, &temp);
+                char routing[typeLen];
+                getEntry(nonLeafNodeInfo.routingKey, i, typeLen, routing);
                 //TODO: key type
-                if(*reinterpret_cast<const int*>(key) < temp){
+                if(compareKey((char *)key, routing, attribute, true) < 0){
                     nextNode = nonLeafNodeInfo.pointers[i];
                     break;
                 }
@@ -459,7 +459,7 @@ PeterDB::PageNum recursiveInsertBTree(PeterDB::FileHandle &fileHandle, PeterDB::
             }
         }
         // go to the next node
-        PeterDB::PageNum  previousNodeNum = recursiveInsertBTree(fileHandle, nextNode, attribute, key, rid, newChildEntry, entryInPage);
+        PeterDB::PageNum previousNodeNum = recursiveInsertBTree(fileHandle, nextNode, attribute, key, rid, newChildEntry, entryInPage);
         if(newChildEntry == nullptr) return 0;
 
         // Special case: we need a new root node

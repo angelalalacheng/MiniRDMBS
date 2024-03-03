@@ -121,7 +121,7 @@ namespace PeterDB {
         }
     }
 
-    SearchEntryInfo IndexManager::searchEntry(IXFileHandle &ixFileHandle, const Attribute &attribute, const void *key) {
+    SearchEntryInfo IndexManager::searchEntry(IXFileHandle &ixFileHandle, const Attribute &attribute, const void *key, const RID &rid) {
         AttrLength typeLen = attribute.type == TypeVarChar ? sizeof (int) + attribute.length : 4;
         PageNum currentPage = getRootPage(ixFileHandle.fileHandle);
 
@@ -138,9 +138,9 @@ namespace PeterDB {
                 SearchEntryInfo searchEntryInfo;
                 searchEntryInfo.targetIndex = -1;
                 for(int i = 0; i < leafNode.currentKey; i++){
-                    int temp;
-                    getEntry(leafNode.key, i, typeLen, &temp);
-                    if(*reinterpret_cast<const int*>(key) == temp){
+                    char temp[typeLen];
+                    getEntry(leafNode.key, i, typeLen, temp);
+                    if(compareKey((char *)key, temp, attribute, true) == 0){
                         searchEntryInfo.targetPage = currentPage;
                         searchEntryInfo.targetIndex = i;
                         return searchEntryInfo;
@@ -153,10 +153,11 @@ namespace PeterDB {
                 deserializeNonLeafNode(nonLeafNode, nodeData + sizeof (NodeHeader));
                 PeterDB::PageNum nextNode = -1;
                 for(int i = 0; i < nonLeafNode.currentKey; i++){
-                    int temp;
-                    getEntry(nonLeafNode.routingKey, i, typeLen, &temp);
-                    if(*reinterpret_cast<const int*>(key) < temp){
+                    char temp[typeLen];
+                    getEntry(nonLeafNode.routingKey, i, typeLen, temp);
+                    if(compareKey((char *)key, temp, attribute, true) < 0){
                         nextNode = nonLeafNode.pointers[i];
+                        break;
                     }
                 }
                 if(nextNode == -1){
@@ -246,6 +247,7 @@ namespace PeterDB {
                     for(int i = 0; i < nonLeafNode.currentKey; i++){
                         char temp[typeLen];
                         getEntry(nonLeafNode.routingKey, i, attribute.type == TypeVarChar ? sizeof (int) + attribute.length : 4, temp);
+                        // TODO: check if the comparison is correct
                         if(compareKey(temp, (char *)lowKey, attribute, true) >= 0){
                             nextNode = nonLeafNode.pointers[i];
                             break;
