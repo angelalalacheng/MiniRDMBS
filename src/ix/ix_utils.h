@@ -232,7 +232,8 @@ void insertVarCharEntry(PeterDB::LeafNode* leafNodeInfo, PeterDB::NonLeafNode* n
         else left = mid + 1;
     }
 
-    const char* entryBytes = reinterpret_cast<const char*>(entryData);
+    char entryBytes[sizeof(int) + len];
+    memmove(entryBytes, entryData, sizeof(int) + len);
     arr.insert(arr.begin() + getVarCharIndexPos(arr, left), entryBytes, entryBytes + len + sizeof(int));
 
 
@@ -247,7 +248,7 @@ void insertVarCharEntry(PeterDB::LeafNode* leafNodeInfo, PeterDB::NonLeafNode* n
     }
 
     entryCount += 1; // 更新键值计数
-
+    freeSpace -= (sizeof(int) + len);
 }
 
 void insertEntry(bool isLeaf, PeterDB::LeafNode* leafNodeInfo, PeterDB::NonLeafNode* nonLeafNodeInfo, const PeterDB::Attribute &attribute, const void* entryData, const PeterDB::RID* entryRID, PeterDB::PageNum* pageNum){
@@ -664,7 +665,7 @@ PeterDB::PageNum recursiveInsertBTree(PeterDB::FileHandle &fileHandle, PeterDB::
             }
             newLeafNodeInfo.rid.insert(newLeafNodeInfo.rid.begin(),tempNode.rid.begin() + splitPoint,tempNode.rid.end());
             newLeafNodeInfo.currentKey = tempNode.currentKey - splitPoint;
-            newLeafNodeInfo.freeSpace -= (leafNodeInfo.key.size() + sizeof(PeterDB::RID) * leafNodeInfo.currentKey);
+            newLeafNodeInfo.freeSpace -= (newLeafNodeInfo.key.size() + sizeof(PeterDB::RID) * newLeafNodeInfo.currentKey);
 
             // set sibling info
             newLeafNodeHeader.rightSibling = nodeHeader.rightSibling;
@@ -692,7 +693,8 @@ PeterDB::PageNum recursiveInsertBTree(PeterDB::FileHandle &fileHandle, PeterDB::
 }
 
 // TODO: 要支援不同type的key
-void recursiveGenerateJsonString(PeterDB::FileHandle &fileHandle, PeterDB::PageNum pageNum, std::ostream &out, const PeterDB::Attribute &attribute) {
+void recursiveGenerateJsonString(PeterDB::FileHandle &fileHandle, PeterDB::PageNum pageNum, const PeterDB::Attribute &attribute, std::string &outputJsonString){
+    PeterDB::AttrLength typeLen = attribute.type == PeterDB::TypeVarChar ? sizeof (int) + attribute.length : 4;
     char buffer[PAGE_SIZE];
     memset(buffer, 0, PAGE_SIZE);
     fileHandle.readPage(pageNum, buffer);
@@ -702,42 +704,66 @@ void recursiveGenerateJsonString(PeterDB::FileHandle &fileHandle, PeterDB::PageN
     if (!nodeHeader.isLeaf){
         PeterDB::NonLeafNode nonLeafNodeInfo;
         deserializeNonLeafNode(nonLeafNodeInfo, buffer + sizeof(PeterDB::NodeHeader));
-        out << "{\"keys\":[";
+        outputJsonString += "{\"keys\":[";
         for (size_t i = 0; i < nonLeafNodeInfo.currentKey; ++i) {
-            if (i != 0) out << ",";
-            out << "\"";
-            for (size_t j = 0; j < nonLeafNodeInfo.currentKey; ++j) {
-                int temp;
-                getEntry(nonLeafNodeInfo.routingKey, i * nonLeafNodeInfo.currentKey + j, &temp, attribute);
-                out << temp;
-                if (j != nonLeafNodeInfo.currentKey - 1) out << ",";
+            if (i != 0) outputJsonString += ",";
+            outputJsonString += "\"";
+
+            char temp[typeLen];
+            getEntry(nonLeafNodeInfo.routingKey, i, temp, attribute);
+            // support different type of key
+            if (attribute.type == PeterDB::TypeVarChar) {
+                int len;
+                memmove(&len, temp, sizeof(int));
+                outputJsonString +=  std::string(temp + sizeof(int), len);
             }
-            out << "\"";
+            else {
+                if (attribute.type == PeterDB::TypeInt) {
+                    outputJsonString += std::to_string(*reinterpret_cast<int*>(temp));
+                }
+                else {
+                    outputJsonString += std::to_string(*reinterpret_cast<float*>(temp));
+                }
+            }
+
+            outputJsonString += "\"";
         }
-        out << "],\n";
-        out << "\"children\":[";
+        outputJsonString += "],\n";
+        outputJsonString += "\"children\":[";
         for (size_t i = 0; i < nonLeafNodeInfo.currentKey + 1; ++i) {
-            if (i != 0) out << ",";
-            recursiveGenerateJsonString(fileHandle, nonLeafNodeInfo.pointers[i], out, attribute);
+            if (i != 0) outputJsonString += ",";
+            recursiveGenerateJsonString(fileHandle, nonLeafNodeInfo.pointers[i], attribute, outputJsonString);
         }
-        out << "]}\n";
+        outputJsonString += "]}\n";
     }
     else {
         PeterDB::LeafNode leafNodeInfo;
         deserializeLeafNode(leafNodeInfo, buffer + sizeof(PeterDB::NodeHeader));
-        out << "{\"keys\":[";
+
+        outputJsonString += "{\"keys\":[";
         for (size_t i = 0; i < leafNodeInfo.currentKey; ++i) {
-            if (i != 0) out << ",";
-            int temp;
-            getEntry(leafNodeInfo.key, i,&temp, attribute);
-            out << "\"";
-            out << temp << ":[(" << leafNodeInfo.rid[i].pageNum << "," << leafNodeInfo.rid[i].slotNum << ")]";
-            out << "\"";
+            if (i != 0) outputJsonString += ",";
+            char temp[typeLen];
+            getEntry(leafNodeInfo.key, i,temp, attribute);
+            outputJsonString += "\"";
+
+            if (attribute.type == PeterDB::TypeVarChar) {
+                int len;
+                memmove(&len, temp, sizeof(int));
+                outputJsonString += std::string(temp + sizeof(int), len);
+            }
+            else {
+                if (attribute.type == PeterDB::TypeInt) {
+                    outputJsonString += std::to_string(*reinterpret_cast<int*>(temp));
+                }
+                else {
+                    outputJsonString += std::to_string(*reinterpret_cast<float*>(temp));
+                }
+            }
+            outputJsonString += (":[(" + std::to_string(leafNodeInfo.rid[i].pageNum) + "," + std::to_string(leafNodeInfo.rid[i].slotNum) + ")]");
+            outputJsonString += "\"";
         }
-        out << "]}";
-
-        if(nodeHeader.rightSibling != -1) out << ",\n";
-
+        outputJsonString += "]}";
         return;
     }
 }

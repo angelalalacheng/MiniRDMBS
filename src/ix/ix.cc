@@ -1,5 +1,7 @@
 #include "src/include/ix.h"
 #include "src/ix/ix_utils.h"
+#include <iostream>
+#include <sstream>
 
 namespace PeterDB {
     IndexManager &IndexManager::instance() {
@@ -265,8 +267,13 @@ namespace PeterDB {
     RC IndexManager::printBTree(IXFileHandle &ixFileHandle, const Attribute &attribute, std::ostream &out) const {
         AttrLength typeLen = attribute.type == TypeVarChar ? 4 : sizeof (int) + attribute.length;
         PageNum currentPage = getRootPage(ixFileHandle.fileHandle);
+        std::string outputJsonString;
 
-        recursiveGenerateJsonString(ixFileHandle.fileHandle, currentPage, out, attribute);
+        recursiveGenerateJsonString(ixFileHandle.fileHandle, currentPage, attribute, outputJsonString);
+
+        out << outputJsonString;
+
+//        std::cout<< outputJsonString << std::endl;
 
         return 0;
     }
