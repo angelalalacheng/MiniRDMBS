@@ -87,9 +87,9 @@ namespace PeterDB {
                 deserializeLeafNode(leafNode, nodeData + sizeof (NodeHeader));
                 for(int i = 0; i < leafNode.currentKey; i++){
                     char temp[typeLen];
-                    getEntry(leafNode.key, i, typeLen, temp);
+                    getEntry(leafNode.key, i, temp, attribute);
                     if(compareKey((char *)key, temp, attribute, true) == 0 && leafNode.rid[i].pageNum == rid.pageNum && leafNode.rid[i].slotNum == rid.slotNum){
-                        clearEntry(leafNode.key, i, typeLen);
+                        clearEntry(leafNode.key, i, attribute);
                         leafNode.rid.erase(leafNode.rid.begin() + i);
                         leafNode.currentKey--;
                         leafNode.freeSpace += (typeLen + sizeof (RID));
@@ -106,7 +106,7 @@ namespace PeterDB {
                 PeterDB::PageNum nextNode = -1;
                 for(int i = 0; i < nonLeafNode.currentKey; i++){
                     char temp[typeLen];
-                    getEntry(nonLeafNode.routingKey, i, typeLen, temp);
+                    getEntry(nonLeafNode.routingKey, i, temp, attribute);
                     if(compareKey((char *)key, temp, attribute, true) < 0){
                         nextNode = nonLeafNode.pointers[i];
                         break;
@@ -139,7 +139,7 @@ namespace PeterDB {
                 searchEntryInfo.targetIndex = -1;
                 for(int i = 0; i < leafNode.currentKey; i++){
                     char temp[typeLen];
-                    getEntry(leafNode.key, i, typeLen, temp);
+                    getEntry(leafNode.key, i, temp, attribute);
                     if(compareKey((char *)key, temp, attribute, true) == 0){
                         searchEntryInfo.targetPage = currentPage;
                         searchEntryInfo.targetIndex = i;
@@ -154,7 +154,7 @@ namespace PeterDB {
                 PeterDB::PageNum nextNode = -1;
                 for(int i = 0; i < nonLeafNode.currentKey; i++){
                     char temp[typeLen];
-                    getEntry(nonLeafNode.routingKey, i, typeLen, temp);
+                    getEntry(nonLeafNode.routingKey, i, temp, attribute);
                     if(compareKey((char *)key, temp, attribute, true) < 0){
                         nextNode = nonLeafNode.pointers[i];
                         break;
@@ -203,7 +203,7 @@ namespace PeterDB {
                     deserializeLeafNode(leafNode, nodeData + sizeof (NodeHeader));
                     for(int i = 0; i < leafNode.currentKey; i++){
                         char temp[typeLen];
-                        getEntry(leafNode.key, i, attribute.type == TypeVarChar ? sizeof (int) + attribute.length : 4, temp);
+                        getEntry(leafNode.key, i, temp, attribute);
                         int comparisonLow = compareKey(temp, (char *)lowKey, attribute, true);
                         int comparisonHigh = compareKey(temp, (char *)highKey, attribute, false);
 
@@ -246,7 +246,7 @@ namespace PeterDB {
                 else{
                     for(int i = 0; i < nonLeafNode.currentKey; i++){
                         char temp[typeLen];
-                        getEntry(nonLeafNode.routingKey, i, attribute.type == TypeVarChar ? sizeof (int) + attribute.length : 4, temp);
+                        getEntry(nonLeafNode.routingKey, i, temp, attribute);
                         // TODO: check if the comparison is correct
                         if(compareKey(temp, (char *)lowKey, attribute, true) > 0){
                             nextNode = nonLeafNode.pointers[i];
@@ -266,7 +266,7 @@ namespace PeterDB {
         AttrLength typeLen = attribute.type == TypeVarChar ? 4 : sizeof (int) + attribute.length;
         PageNum currentPage = getRootPage(ixFileHandle.fileHandle);
 
-        recursiveGenerateJsonString(ixFileHandle.fileHandle, currentPage, out);
+        recursiveGenerateJsonString(ixFileHandle.fileHandle, currentPage, out, attribute);
 
         return 0;
     }
