@@ -36,7 +36,6 @@ namespace PeterDB {
 
     RC IndexManager::closeFile(IXFileHandle &ixFileHandle) {
         if(PagedFileManager::instance().closeFile(ixFileHandle.fileHandle) == 0){
-            std::cout << "File closed" << std::endl;
             if(ixFileHandle.fileHandle.openFileStream != nullptr){
                 ixFileHandle.fileHandle.openFileStream.reset();
             }
@@ -56,12 +55,12 @@ namespace PeterDB {
      */
     RC
     IndexManager::insertEntry(IXFileHandle &ixFileHandle, const Attribute &attribute, const void *key, const RID &rid) {
-//        short entryInPage = getNumOfEntryInPage(attribute);
         if(ixFileHandle.fileHandle.getNumberOfPages() == 0){
             dummyNode(ixFileHandle.fileHandle); // pageNum = 0
         }
         NewEntry *newChildEntry = nullptr;
         recursiveInsertBTree(ixFileHandle.fileHandle, 0, attribute, key, rid, newChildEntry);
+        delete newChildEntry;
         return 0;
     }
     /*
@@ -249,7 +248,6 @@ namespace PeterDB {
                     for(int i = 0; i < nonLeafNode.currentKey; i++){
                         char temp[typeLen];
                         getEntry(nonLeafNode.routingKey, i, temp, attribute);
-                        // TODO: check if the comparison is correct
                         if(compareKey(temp, nonLeafNode.rid[i], (char *)lowKey, RID(), attribute, true) > 0){
                             nextNode = nonLeafNode.pointers[i];
                             break;
@@ -265,7 +263,6 @@ namespace PeterDB {
     }
 
     RC IndexManager::printBTree(IXFileHandle &ixFileHandle, const Attribute &attribute, std::ostream &out) const {
-        AttrLength typeLen = attribute.type == TypeVarChar ? 4 : sizeof (int) + attribute.length;
         PageNum currentPage = getRootPage(ixFileHandle.fileHandle);
         std::string outputJsonString;
 
@@ -273,7 +270,7 @@ namespace PeterDB {
 
         out << outputJsonString;
 
-        std::cout<< outputJsonString << std::endl;
+//        std::cout<< outputJsonString << std::endl;
 
         return 0;
     }

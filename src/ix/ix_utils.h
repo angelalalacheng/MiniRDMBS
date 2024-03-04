@@ -13,7 +13,6 @@
 #include <memory>
 #include <map>
 
-// TODO: 需要加上compare RID
 int compareKey(const char* key1, const PeterDB::RID &rid1, const char* key2, const PeterDB::RID &rid2, const PeterDB::Attribute& attribute, bool compareLow) {
     if (attribute.type == PeterDB::TypeInt) {
         if(compareLow && key2 == nullptr) return 1;
@@ -108,7 +107,6 @@ void clearEntry(std::vector<char>& arr, size_t index, const PeterDB::Attribute &
     }
 }
 
-// TODO: key一樣要compare RID
 void insertIntEntry(PeterDB::LeafNode* leafNodeInfo, PeterDB::NonLeafNode* nonLeafNodeInfo, bool isLeaf, const PeterDB::Attribute &attribute, const void* entryData, const PeterDB::RID* entryRID, const PeterDB::PageNum* pageNum) {
     PeterDB::AttrLength typeLen = attribute.length;
 
@@ -150,16 +148,6 @@ void insertIntEntry(PeterDB::LeafNode* leafNodeInfo, PeterDB::NonLeafNode* nonLe
         freeSpace -= sizeof(PeterDB::PageNum);
     }
 
-//    if (isLeaf) {
-//        std::vector<PeterDB::RID>& rids = leafNodeInfo->rid;
-//        rids.insert(rids.begin() + left, *entryRID);
-//        freeSpace -= sizeof(PeterDB::RID);
-//    } else {
-//        std::vector<PeterDB::PageNum>& pointers = nonLeafNodeInfo->pointers;
-//        pointers.insert(pointers.begin() + left + 1, *pageNum);
-//        freeSpace -= sizeof(PeterDB::PageNum);
-//    }
-
     entryCount += 1; // 更新键值计数
     freeSpace -= typeLen;
 }
@@ -179,7 +167,7 @@ void insertFloatEntry(PeterDB::LeafNode* leafNodeInfo, PeterDB::NonLeafNode* non
         mid = (left + right) / 2;
         char midData[typeLen];
         getEntry(arr, mid, midData, attribute);
-        int midValue = *reinterpret_cast<float*>(midData);
+        float midValue = *reinterpret_cast<float*>(midData);
         if (midValue == target) {
             if(rids[mid].pageNum < entryRID->pageNum || (rids[mid].pageNum == entryRID->pageNum && rids[mid].slotNum < entryRID->slotNum)){
                 left = mid + 1;
@@ -203,16 +191,6 @@ void insertFloatEntry(PeterDB::LeafNode* leafNodeInfo, PeterDB::NonLeafNode* non
         pointers.insert(pointers.begin() + left + 1, *pageNum);
         freeSpace -= sizeof(PeterDB::PageNum);
     }
-
-//    if (isLeaf) {
-//        std::vector<PeterDB::RID>& rids = leafNodeInfo->rid;
-//        rids.insert(rids.begin() + left, *entryRID);
-//        freeSpace -= sizeof(PeterDB::RID);
-//    } else {
-//        std::vector<PeterDB::PageNum>& pointers = nonLeafNodeInfo->pointers;
-//        pointers.insert(pointers.begin() + left + 1, *pageNum);
-//        freeSpace -= sizeof(PeterDB::PageNum);
-//    }
 
     entryCount += 1; // 更新键值计数
     freeSpace -= typeLen;
@@ -566,7 +544,6 @@ PeterDB::PageNum recursiveInsertBTree(PeterDB::FileHandle &fileHandle, PeterDB::
 
         // Special case: we need a new root node
         if(nodeHeader.isDummy){
-            std::cout << "# You are in dummy node!!" << std::endl;
             PeterDB::PageNum newRootPage = fileHandle.getNumberOfPages();
             char newRootBuffer[PAGE_SIZE];
             initialNonLeafNodePage(fileHandle,newRootBuffer);
@@ -767,7 +744,6 @@ void getKeyStringValue(char* temp, const PeterDB::Attribute& attribute, std::str
             break;
         }
         default:
-            // 处理未知类型
             break;
     }
 }
