@@ -563,7 +563,7 @@ namespace PeterDBTesting {
         unsigned count = 0;
         while (ix_ScanIterator.getNextEntry(rid, &key) == success) {
             count++;
-
+//            if(count >=3700 && count <=3800) std::cout << "count: " << count << " - Returned rid: " << rid.pageNum << " " << rid.slotNum << "key: " << key << std::endl;
             if (count % 5000 == 0) {
                 GTEST_LOG_(INFO) << count << " - Returned rid: " << rid.pageNum << " " << rid.slotNum;
             }

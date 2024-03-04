@@ -21,7 +21,7 @@ namespace PeterDB {
         short currentKey;
         short freeSpace;
         std::vector<char> routingKey;
-//        std::vector<RID> rid;
+        std::vector<RID> rid;
         std::vector<PageNum> pointers;
     } NonLeafNode;
 
@@ -35,7 +35,7 @@ namespace PeterDB {
     typedef struct {
         void *key;
         PageNum pageNum;
-//        RID rid;
+        RID rid;
     } NewEntry;
 
     typedef struct {

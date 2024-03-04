@@ -90,7 +90,7 @@ namespace PeterDB {
                 for(int i = 0; i < leafNode.currentKey; i++){
                     char temp[typeLen];
                     getEntry(leafNode.key, i, temp, attribute);
-                    if(compareKey((char *)key, temp, attribute, true) == 0 && leafNode.rid[i].pageNum == rid.pageNum && leafNode.rid[i].slotNum == rid.slotNum){
+                    if(compareKey((char *)key, rid, temp, leafNode.rid[i], attribute, true) == 0){
                         clearEntry(leafNode.key, i, attribute);
                         leafNode.rid.erase(leafNode.rid.begin() + i);
                         leafNode.currentKey--;
@@ -109,7 +109,7 @@ namespace PeterDB {
                 for(int i = 0; i < nonLeafNode.currentKey; i++){
                     char temp[typeLen];
                     getEntry(nonLeafNode.routingKey, i, temp, attribute);
-                    if(compareKey((char *)key, temp, attribute, true) < 0){
+                    if(compareKey((char *)key, rid, temp, nonLeafNode.rid[i], attribute, true) < 0){
                         nextNode = nonLeafNode.pointers[i];
                         break;
                     }
@@ -142,7 +142,7 @@ namespace PeterDB {
                 for(int i = 0; i < leafNode.currentKey; i++){
                     char temp[typeLen];
                     getEntry(leafNode.key, i, temp, attribute);
-                    if(compareKey((char *)key, temp, attribute, true) == 0){
+                    if(compareKey((char *)key, rid, temp, leafNode.rid[i], attribute, true) == 0){
                         searchEntryInfo.targetPage = currentPage;
                         searchEntryInfo.targetIndex = i;
                         return searchEntryInfo;
@@ -157,7 +157,7 @@ namespace PeterDB {
                 for(int i = 0; i < nonLeafNode.currentKey; i++){
                     char temp[typeLen];
                     getEntry(nonLeafNode.routingKey, i, temp, attribute);
-                    if(compareKey((char *)key, temp, attribute, true) < 0){
+                    if(compareKey((char *)key, rid, temp, nonLeafNode.rid[i], attribute, true) < 0){
                         nextNode = nonLeafNode.pointers[i];
                         break;
                     }
@@ -206,8 +206,8 @@ namespace PeterDB {
                     for(int i = 0; i < leafNode.currentKey; i++){
                         char temp[typeLen];
                         getEntry(leafNode.key, i, temp, attribute);
-                        int comparisonLow = compareKey(temp, (char *)lowKey, attribute, true);
-                        int comparisonHigh = compareKey(temp, (char *)highKey, attribute, false);
+                        int comparisonLow = compareKey(temp, RID(), (char *)lowKey, RID(), attribute, true);
+                        int comparisonHigh = compareKey(temp, RID(), (char *)highKey, RID(), attribute, false);
 
                         if(comparisonLow > 0 || (lowKeyInclusive && comparisonLow == 0)) {
                             if(comparisonHigh < 0 || (highKeyInclusive && comparisonHigh == 0)) {
@@ -250,7 +250,7 @@ namespace PeterDB {
                         char temp[typeLen];
                         getEntry(nonLeafNode.routingKey, i, temp, attribute);
                         // TODO: check if the comparison is correct
-                        if(compareKey(temp, (char *)lowKey, attribute, true) > 0){
+                        if(compareKey(temp, nonLeafNode.rid[i], (char *)lowKey, RID(), attribute, true) > 0){
                             nextNode = nonLeafNode.pointers[i];
                             break;
                         }

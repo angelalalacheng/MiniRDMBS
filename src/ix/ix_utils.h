@@ -13,21 +13,17 @@
 #include <memory>
 #include <map>
 
-short getNumOfEntryInPage(const PeterDB::Attribute &attribute){
-    short size = attribute.length + sizeof(PeterDB::RID) + sizeof(PeterDB::PageNum); // sizeof(RID): 8 bytes, sizeof(PageNum): 4 bytes
-    // leafNode: size of key + size of RID
-    // nonLeafNode: size of key + size of PageNum (還會多一個pointer)
-    short numOfNode = (PAGE_SIZE - sizeof(PeterDB::NodeHeader))/ size;
-
-    return numOfNode;
-}
 // TODO: 需要加上compare RID
-int compareKey(const char* key1, const char* key2, const PeterDB::Attribute& attribute, bool compareLow) {
+int compareKey(const char* key1, const PeterDB::RID &rid1, const char* key2, const PeterDB::RID &rid2, const PeterDB::Attribute& attribute, bool compareLow) {
     if (attribute.type == PeterDB::TypeInt) {
         if(compareLow && key2 == nullptr) return 1;
         if(!compareLow && key2 == nullptr) return -1;
         int k1 = *reinterpret_cast<const int*>(key1);
         int k2 = *reinterpret_cast<const int*>(key2);
+        if(k1 == k2){
+            if(rid1.pageNum == rid2.pageNum) return (rid1.slotNum > rid2.slotNum) - (rid1.slotNum < rid2.slotNum);
+            return (rid1.pageNum > rid2.pageNum) - (rid1.pageNum < rid2.pageNum);
+        }
         return (k1 > k2) - (k1 < k2);
     }
     else if (attribute.type == PeterDB::TypeReal) {
@@ -35,6 +31,10 @@ int compareKey(const char* key1, const char* key2, const PeterDB::Attribute& att
         if(!compareLow && key2 == nullptr) return -1;
         float k1 = *reinterpret_cast<const float*>(key1);
         float k2 = *reinterpret_cast<const float*>(key2);
+        if(k1 == k2){
+            if(rid1.pageNum == rid2.pageNum) return (rid1.slotNum > rid2.slotNum) - (rid1.slotNum < rid2.slotNum);
+            return (rid1.pageNum > rid2.pageNum) - (rid1.pageNum < rid2.pageNum);
+        }
         return (k1 > k2) - (k1 < k2);
     }
     else if (attribute.type == PeterDB::TypeVarChar) {
@@ -45,6 +45,10 @@ int compareKey(const char* key1, const char* key2, const PeterDB::Attribute& att
         memmove(&len2, key2, sizeof(int));
         std::string k1(static_cast<const char*>(key1) + sizeof(int), len1);
         std::string k2(static_cast<const char*>(key2) + sizeof(int), len2);
+        if(k1 == k2){
+            if(rid1.pageNum == rid2.pageNum) return (rid1.slotNum > rid2.slotNum) - (rid1.slotNum < rid2.slotNum);
+            return (rid1.pageNum > rid2.pageNum) - (rid1.pageNum < rid2.pageNum);
+        }
         return k1.compare(k2);
     }
     return -2;
@@ -109,6 +113,7 @@ void insertIntEntry(PeterDB::LeafNode* leafNodeInfo, PeterDB::NonLeafNode* nonLe
     PeterDB::AttrLength typeLen = attribute.length;
 
     std::vector<char>& arr = isLeaf ? leafNodeInfo->key : nonLeafNodeInfo->routingKey;
+    std::vector<PeterDB::RID>& rids = isLeaf ? leafNodeInfo->rid : nonLeafNodeInfo->rid;
     short& entryCount = isLeaf ? leafNodeInfo->currentKey : nonLeafNodeInfo->currentKey;
     short& freeSpace = isLeaf ? leafNodeInfo->freeSpace : nonLeafNodeInfo->freeSpace;
 
@@ -121,8 +126,12 @@ void insertIntEntry(PeterDB::LeafNode* leafNodeInfo, PeterDB::NonLeafNode* nonLe
         getEntry(arr, mid, midData, attribute);
         int midValue = *reinterpret_cast<int*>(midData);
         if (midValue == target) {
-            left = mid + 1;
-            break;
+            if(rids[mid].pageNum < entryRID->pageNum || (rids[mid].pageNum == entryRID->pageNum && rids[mid].slotNum < entryRID->slotNum)){
+                left = mid + 1;
+            }
+            else{
+                right = mid;
+            }
         }
         else if (target < midValue) right = mid;
         else left = mid + 1;
@@ -132,15 +141,24 @@ void insertIntEntry(PeterDB::LeafNode* leafNodeInfo, PeterDB::NonLeafNode* nonLe
     arr.insert(arr.begin() + (left * typeLen), entryBytes, entryBytes + typeLen);
 
 
-    if (isLeaf) {
-        std::vector<PeterDB::RID>& rids = leafNodeInfo->rid;
-        rids.insert(rids.begin() + left, *entryRID);
-        freeSpace -= sizeof(PeterDB::RID);
-    } else {
+    rids.insert(rids.begin() + left, *entryRID);
+    freeSpace -= sizeof(PeterDB::RID);
+
+    if(!isLeaf){
         std::vector<PeterDB::PageNum>& pointers = nonLeafNodeInfo->pointers;
         pointers.insert(pointers.begin() + left + 1, *pageNum);
         freeSpace -= sizeof(PeterDB::PageNum);
     }
+
+//    if (isLeaf) {
+//        std::vector<PeterDB::RID>& rids = leafNodeInfo->rid;
+//        rids.insert(rids.begin() + left, *entryRID);
+//        freeSpace -= sizeof(PeterDB::RID);
+//    } else {
+//        std::vector<PeterDB::PageNum>& pointers = nonLeafNodeInfo->pointers;
+//        pointers.insert(pointers.begin() + left + 1, *pageNum);
+//        freeSpace -= sizeof(PeterDB::PageNum);
+//    }
 
     entryCount += 1; // 更新键值计数
     freeSpace -= typeLen;
@@ -150,6 +168,7 @@ void insertFloatEntry(PeterDB::LeafNode* leafNodeInfo, PeterDB::NonLeafNode* non
     PeterDB::AttrLength typeLen = attribute.length;
 
     std::vector<char>& arr = isLeaf ? leafNodeInfo->key : nonLeafNodeInfo->routingKey;
+    std::vector<PeterDB::RID>& rids = isLeaf ? leafNodeInfo->rid : nonLeafNodeInfo->rid;
     short& entryCount = isLeaf ? leafNodeInfo->currentKey : nonLeafNodeInfo->currentKey;
     short& freeSpace = isLeaf ? leafNodeInfo->freeSpace : nonLeafNodeInfo->freeSpace;
 
@@ -160,10 +179,14 @@ void insertFloatEntry(PeterDB::LeafNode* leafNodeInfo, PeterDB::NonLeafNode* non
         mid = (left + right) / 2;
         char midData[typeLen];
         getEntry(arr, mid, midData, attribute);
-        float midValue = *reinterpret_cast<float*>(midData);
+        int midValue = *reinterpret_cast<float*>(midData);
         if (midValue == target) {
-            left = mid + 1;
-            break;
+            if(rids[mid].pageNum < entryRID->pageNum || (rids[mid].pageNum == entryRID->pageNum && rids[mid].slotNum < entryRID->slotNum)){
+                left = mid + 1;
+            }
+            else{
+                right = mid;
+            }
         }
         else if (target < midValue) right = mid;
         else left = mid + 1;
@@ -172,15 +195,24 @@ void insertFloatEntry(PeterDB::LeafNode* leafNodeInfo, PeterDB::NonLeafNode* non
     const char* entryBytes = reinterpret_cast<const char*>(entryData);
     arr.insert(arr.begin() + (left * typeLen), entryBytes, entryBytes + typeLen);
 
-    if (isLeaf) {
-        std::vector<PeterDB::RID>& rids = leafNodeInfo->rid;
-        rids.insert(rids.begin() + left, *entryRID);
-        freeSpace -= sizeof(PeterDB::RID);
-    } else {
+    rids.insert(rids.begin() + left, *entryRID);
+    freeSpace -= sizeof(PeterDB::RID);
+
+    if(!isLeaf){
         std::vector<PeterDB::PageNum>& pointers = nonLeafNodeInfo->pointers;
         pointers.insert(pointers.begin() + left + 1, *pageNum);
         freeSpace -= sizeof(PeterDB::PageNum);
     }
+
+//    if (isLeaf) {
+//        std::vector<PeterDB::RID>& rids = leafNodeInfo->rid;
+//        rids.insert(rids.begin() + left, *entryRID);
+//        freeSpace -= sizeof(PeterDB::RID);
+//    } else {
+//        std::vector<PeterDB::PageNum>& pointers = nonLeafNodeInfo->pointers;
+//        pointers.insert(pointers.begin() + left + 1, *pageNum);
+//        freeSpace -= sizeof(PeterDB::PageNum);
+//    }
 
     entryCount += 1; // 更新键值计数
     freeSpace -= typeLen;
@@ -203,6 +235,7 @@ void insertVarCharEntry(PeterDB::LeafNode* leafNodeInfo, PeterDB::NonLeafNode* n
     PeterDB::AttrLength typeLen = attribute.length;
 
     std::vector<char>& arr = isLeaf ? leafNodeInfo->key : nonLeafNodeInfo->routingKey;
+    std::vector<PeterDB::RID>& rids = isLeaf ? leafNodeInfo->rid : nonLeafNodeInfo->rid;
     short& entryCount = isLeaf ? leafNodeInfo->currentKey : nonLeafNodeInfo->currentKey;
     short& freeSpace = isLeaf ? leafNodeInfo->freeSpace : nonLeafNodeInfo->freeSpace;
 
@@ -226,8 +259,12 @@ void insertVarCharEntry(PeterDB::LeafNode* leafNodeInfo, PeterDB::NonLeafNode* n
         memmove(&midValue[0], (char *)midData + sizeof (int), tempLen);
 
         if (midValue == target) {
-            left = mid + 1;
-            break;
+            if(rids[mid].pageNum < entryRID->pageNum || (rids[mid].pageNum == entryRID->pageNum && rids[mid].slotNum < entryRID->slotNum)){
+                left = mid + 1;
+            }
+            else{
+                right = mid;
+            }
         }
         else if (target < midValue) right = mid;
         else left = mid + 1;
@@ -237,12 +274,10 @@ void insertVarCharEntry(PeterDB::LeafNode* leafNodeInfo, PeterDB::NonLeafNode* n
     memmove(entryBytes, entryData, sizeof(int) + len);
     arr.insert(arr.begin() + getVarCharIndexPos(arr, left), entryBytes, entryBytes + len + sizeof(int));
 
+    rids.insert(rids.begin() + left, *entryRID);
+    freeSpace -= sizeof(PeterDB::RID);
 
-    if (isLeaf) {
-        std::vector<PeterDB::RID>& rids = leafNodeInfo->rid;
-        rids.insert(rids.begin() + left, *entryRID);
-        freeSpace -= sizeof(PeterDB::RID);
-    } else {
+    if(!isLeaf){
         std::vector<PeterDB::PageNum>& pointers = nonLeafNodeInfo->pointers;
         pointers.insert(pointers.begin() + left + 1, *pageNum);
         freeSpace -= sizeof(PeterDB::PageNum);
@@ -282,7 +317,12 @@ void serializeNonLeafNode(const PeterDB::NonLeafNode& node, char* buffer) {
     memmove(buffer + offset, &pointerSize, sizeof(pointerSize));
     offset += sizeof(pointerSize);
     memmove(buffer + offset, node.pointers.data(), pointerSize * sizeof(PeterDB::PageNum));
-    // offset += node.children.size() * sizeof(PageNum); // 更新 offset 如有必要
+    offset += pointerSize * sizeof(PeterDB::PageNum);
+
+    size_t ridSize = node.rid.size();
+    memmove(buffer + offset, &ridSize, sizeof(ridSize));
+    offset += sizeof(ridSize);
+    memmove(buffer + offset, node.rid.data(), ridSize * sizeof(PeterDB::RID));
 }
 
 void deserializeNonLeafNode(PeterDB::NonLeafNode& node, const char* buffer) {
@@ -310,6 +350,17 @@ void deserializeNonLeafNode(PeterDB::NonLeafNode& node, const char* buffer) {
         node.pointers[i] = child;
         offset += sizeof(PeterDB::PageNum);
     }
+
+    size_t ridSize; // 8 bytes
+    memmove(&ridSize, buffer + offset, sizeof(ridSize));
+    offset += sizeof(ridSize);
+    node.rid.resize(ridSize);
+    for (size_t i = 0; i < ridSize; ++i) {
+        PeterDB::RID rid;
+        memmove(&rid, buffer + offset, sizeof(PeterDB::RID));
+        node.rid[i] = rid;
+        offset += sizeof(PeterDB::RID);
+    }
 }
 
 void serializeLeafNode(const PeterDB::LeafNode& node, char* buffer) {
@@ -330,7 +381,6 @@ void serializeLeafNode(const PeterDB::LeafNode& node, char* buffer) {
     memmove(buffer + offset, &ridSize, sizeof(ridSize));
     offset += sizeof(ridSize);
     memmove(buffer + offset, node.rid.data(), ridSize * sizeof(PeterDB::RID));
-//    offset += ridSize * sizeof(PeterDB::RID);
 }
 
 void deserializeLeafNode(PeterDB::LeafNode& node, const char* buffer){
@@ -380,7 +430,7 @@ void initialNonLeafNodePage(PeterDB::FileHandle &fileHandle, char* buffer){
     nodeHeader.rightSibling = -1;
 
     nonLeafNode.currentKey = 0;
-    nonLeafNode.freeSpace = PAGE_SIZE - sizeof(PeterDB::NodeHeader) - sizeof(size_t) * 2; // size_t is for routingKeySize and pointerSize
+    nonLeafNode.freeSpace = PAGE_SIZE - sizeof(PeterDB::NodeHeader) - sizeof(size_t) * 3; // size_t is for routingKeySize and pointerSize and ridSize
 
     setNodeHeader(node, nodeHeader);
     serializeNonLeafNode(nonLeafNode, node + sizeof(PeterDB::NodeHeader));
@@ -422,7 +472,6 @@ void dummyNode(PeterDB::FileHandle &fileHandle){ // dummy node (pageNum = 0) poi
     nodeHeader.isLeaf = 0;
     nodeHeader.isDummy = 1;
     nodeHeader.parent = -1;
-//    nodeHeader.leftSibling = -1;
     nodeHeader.rightSibling = -1;
 
     memmove(dummy, &nodeHeader, sizeof(PeterDB::NodeHeader));
@@ -502,7 +551,7 @@ PeterDB::PageNum recursiveInsertBTree(PeterDB::FileHandle &fileHandle, PeterDB::
             for (size_t i = 0; i < nonLeafNodeInfo.currentKey; ++i) {
                 char routing[typeLen];
                 getEntry(nonLeafNodeInfo.routingKey, i, routing, attribute);
-                if(compareKey((char *)key, routing, attribute, true) < 0){
+                if(compareKey((char *)key, rid, routing, nonLeafNodeInfo.rid[i], attribute,true) < 0){
                     nextNode = nonLeafNodeInfo.pointers[i];
                     break;
                 }
@@ -526,7 +575,7 @@ PeterDB::PageNum recursiveInsertBTree(PeterDB::FileHandle &fileHandle, PeterDB::
             deserializeNonLeafNode(newRootNodeInfo, newRootBuffer + sizeof(PeterDB::NodeHeader));
 
             setFirstPointer(newRootNodeInfo, previousNodeNum);
-            insertEntry(false, nullptr, &newRootNodeInfo, attribute, newChildEntry->key, nullptr, &newChildEntry->pageNum);
+            insertEntry(false, nullptr, &newRootNodeInfo, attribute, newChildEntry->key, &newChildEntry->rid, &newChildEntry->pageNum);
 
             setRootPage(fileHandle, newRootPage);
             serializeNonLeafNode(newRootNodeInfo, newRootBuffer + sizeof(PeterDB::NodeHeader));
@@ -535,8 +584,8 @@ PeterDB::PageNum recursiveInsertBTree(PeterDB::FileHandle &fileHandle, PeterDB::
         }
 
         // if non-leaf node has enough space
-        if(keyLen + sizeof(PeterDB::PageNum) < nonLeafNodeInfo.freeSpace){
-            insertEntry(false, nullptr, &nonLeafNodeInfo, attribute, newChildEntry->key, nullptr, &newChildEntry->pageNum);
+        if(keyLen + sizeof(PeterDB::PageNum) + sizeof (PeterDB::RID) < nonLeafNodeInfo.freeSpace){
+            insertEntry(false, nullptr, &nonLeafNodeInfo, attribute, newChildEntry->key, &newChildEntry->rid, &newChildEntry->pageNum);
             serializeNonLeafNode(nonLeafNodeInfo, buffer + sizeof(PeterDB::NodeHeader));
             newChildEntry = nullptr;
             fileHandle.writePage(pageNumber, buffer);
@@ -548,9 +597,10 @@ PeterDB::PageNum recursiveInsertBTree(PeterDB::FileHandle &fileHandle, PeterDB::
             tempNode.currentKey = nonLeafNodeInfo.currentKey;
             tempNode.routingKey = nonLeafNodeInfo.routingKey;
             tempNode.pointers = nonLeafNodeInfo.pointers;
+            tempNode.rid = nonLeafNodeInfo.rid;
 
             // insert new key
-            insertEntry(false, nullptr, &tempNode, attribute, newChildEntry->key, nullptr, &newChildEntry->pageNum);
+            insertEntry(false, nullptr, &tempNode, attribute, newChildEntry->key, &newChildEntry->rid, &newChildEntry->pageNum);
 
             // create a new non-leaf node
             PeterDB::PageNum newNonLeafPage = fileHandle.getNumberOfPages();
@@ -567,7 +617,8 @@ PeterDB::PageNum recursiveInsertBTree(PeterDB::FileHandle &fileHandle, PeterDB::
             // nonLeafNodeInfo(old)得到tempNode前半
             nonLeafNodeInfo.routingKey.clear();
             nonLeafNodeInfo.pointers.clear();
-            nonLeafNodeInfo.freeSpace = PAGE_SIZE - sizeof(PeterDB::NodeHeader) - sizeof (size_t) * 2;
+            nonLeafNodeInfo.rid.clear();
+            nonLeafNodeInfo.freeSpace = PAGE_SIZE - sizeof(PeterDB::NodeHeader) - sizeof (size_t) * 3;
 
             if(attribute.type == PeterDB::TypeVarChar){
                 nonLeafNodeInfo.routingKey.insert(nonLeafNodeInfo.routingKey.begin(),tempNode.routingKey.begin(),tempNode.routingKey.begin() + getVarCharIndexPos(tempNode.routingKey, splitPoint));
@@ -576,8 +627,9 @@ PeterDB::PageNum recursiveInsertBTree(PeterDB::FileHandle &fileHandle, PeterDB::
                 nonLeafNodeInfo.routingKey.insert(nonLeafNodeInfo.routingKey.begin(),tempNode.routingKey.begin(),tempNode.routingKey.begin() + splitPoint * typeLen);
             }
             nonLeafNodeInfo.pointers.insert(nonLeafNodeInfo.pointers.begin(),tempNode.pointers.begin(),tempNode.pointers.begin() + splitPoint + 1); //記得多1
+            nonLeafNodeInfo.rid.insert(nonLeafNodeInfo.rid.begin(),tempNode.rid.begin(),tempNode.rid.begin() + splitPoint);
             nonLeafNodeInfo.currentKey = splitPoint;
-            nonLeafNodeInfo.freeSpace -= (nonLeafNodeInfo.routingKey.size() + (nonLeafNodeInfo.currentKey + 1) * sizeof(PeterDB::PageNum));
+            nonLeafNodeInfo.freeSpace -= (nonLeafNodeInfo.routingKey.size() + (nonLeafNodeInfo.currentKey + 1) * sizeof(PeterDB::PageNum) + nonLeafNodeInfo.rid.size() * sizeof(PeterDB::RID));
 
             // newNonLeafNode得到tempNode後半
             if(attribute.type == PeterDB::TypeVarChar){
@@ -587,8 +639,9 @@ PeterDB::PageNum recursiveInsertBTree(PeterDB::FileHandle &fileHandle, PeterDB::
                 newNonLeafNodeInfo.routingKey.insert(newNonLeafNodeInfo.routingKey.begin(),tempNode.routingKey.begin() + (splitPoint + 1) * typeLen,tempNode.routingKey.end());
             }
             newNonLeafNodeInfo.pointers.insert(newNonLeafNodeInfo.pointers.begin(),tempNode.pointers.begin() + splitPoint + 1,tempNode.pointers.end());
+            newNonLeafNodeInfo.rid.insert(newNonLeafNodeInfo.rid.begin(),tempNode.rid.begin() + splitPoint + 1,tempNode.rid.end());
             newNonLeafNodeInfo.currentKey = tempNode.currentKey - splitPoint - 1; // 有一個pointer要丟上去
-            newNonLeafNodeInfo.freeSpace -= (newNonLeafNodeInfo.routingKey.size() + (newNonLeafNodeInfo.currentKey + 1) * sizeof(PeterDB::PageNum));
+            newNonLeafNodeInfo.freeSpace -= (newNonLeafNodeInfo.routingKey.size() + (newNonLeafNodeInfo.currentKey + 1) * sizeof(PeterDB::PageNum) + newNonLeafNodeInfo.rid.size() * sizeof(PeterDB::RID));
 
             serializeNonLeafNode(nonLeafNodeInfo, buffer + sizeof(PeterDB::NodeHeader));
             serializeNonLeafNode(newNonLeafNodeInfo, newNodeBuffer + sizeof(PeterDB::NodeHeader));
@@ -597,6 +650,7 @@ PeterDB::PageNum recursiveInsertBTree(PeterDB::FileHandle &fileHandle, PeterDB::
             newChildEntry->key = new char[typeLen];
             getEntry(tempNode.routingKey, splitPoint, newChildEntry->key, attribute);
             newChildEntry->pageNum = newNonLeafPage;
+            newChildEntry->rid = tempNode.rid[splitPoint];
 
             fileHandle.writePage(pageNumber, buffer);
             fileHandle.writePage(newNonLeafPage, newNodeBuffer);
@@ -683,6 +737,7 @@ PeterDB::PageNum recursiveInsertBTree(PeterDB::FileHandle &fileHandle, PeterDB::
             newChildEntry->key = new char[typeLen];
             getEntry(newLeafNodeInfo.key, 0,newChildEntry->key, attribute);
             newChildEntry->pageNum = newLeafPage;
+            newChildEntry->rid = newLeafNodeInfo.rid[0];
 
             fileHandle.writePage(pageNumber, buffer);
             fileHandle.writePage(newLeafPage, newNodeBuffer);
@@ -717,7 +772,6 @@ void getKeyStringValue(char* temp, const PeterDB::Attribute& attribute, std::str
     }
 }
 
-// TODO: 要支援不同type的key
 void recursiveGenerateJsonString(PeterDB::FileHandle &fileHandle, PeterDB::PageNum pageNum, const PeterDB::Attribute &attribute, std::string &outputJsonString){
     PeterDB::AttrLength typeLen = attribute.type == PeterDB::TypeVarChar ? sizeof (int) + attribute.length : 4;
     char buffer[PAGE_SIZE];
