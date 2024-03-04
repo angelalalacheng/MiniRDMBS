@@ -10,6 +10,39 @@
 # define IX_EOF (-1)  // end of the index scan
 
 namespace PeterDB {
+    typedef struct {
+        short isLeaf;
+        short isDummy;
+        int parent;       // no parent then -1
+        int rightSibling; // page number of the right sibling
+    } NodeHeader;
+
+    typedef struct{
+        short currentKey;
+        short freeSpace;
+        std::vector<char> routingKey;
+        std::vector<RID> rid;
+        std::vector<PageNum> pointers;
+    } NonLeafNode;
+
+    typedef struct {
+        short currentKey;
+        short freeSpace;
+        std::vector<char> key;
+        std::vector<RID> rid;
+    } LeafNode;
+
+    typedef struct {
+        void *key;
+        PageNum pageNum;
+        RID rid;
+    } NewEntry;
+
+    typedef struct {
+        PageNum targetPage;
+        int targetIndex;
+    } SearchEntryInfo;
+
     class IX_ScanIterator;
 
     class IXFileHandle;
@@ -37,6 +70,8 @@ namespace PeterDB {
         // Delete an entry from the given index that is indicated by the given ixFileHandle.
         RC deleteEntry(IXFileHandle &ixFileHandle, const Attribute &attribute, const void *key, const RID &rid);
 
+        SearchEntryInfo searchEntry(IXFileHandle &ixFileHandle, const Attribute &attribute, const void *key, const RID &rid);
+
         // Initialize and IX_ScanIterator to support a range search
         RC scan(IXFileHandle &ixFileHandle,
                 const Attribute &attribute,
@@ -60,6 +95,12 @@ namespace PeterDB {
     class IX_ScanIterator {
     public:
 
+        FileHandle *fileHandle;
+        size_t currentIndex = 0;
+        Attribute attribute;
+        std::vector<char> keys;
+        std::vector<RID> candidates;
+
         // Constructor
         IX_ScanIterator();
 
@@ -80,6 +121,7 @@ namespace PeterDB {
         unsigned ixReadPageCounter;
         unsigned ixWritePageCounter;
         unsigned ixAppendPageCounter;
+        FileHandle fileHandle;
 
         // Constructor
         IXFileHandle();
@@ -87,8 +129,11 @@ namespace PeterDB {
         // Destructor
         ~IXFileHandle();
 
-        // Put the current counter values of associated PF FileHandles into variables
+        // Put the current counter values of associated PFM FileHandles into variables
         RC collectCounterValues(unsigned &readPageCount, unsigned &writePageCount, unsigned &appendPageCount);
+
+        // Set the counter values from PFM FileHandles
+        RC setCounterValues();
 
     };
 }// namespace PeterDB

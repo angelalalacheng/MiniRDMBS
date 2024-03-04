@@ -563,7 +563,6 @@ namespace PeterDBTesting {
         unsigned count = 0;
         while (ix_ScanIterator.getNextEntry(rid, &key) == success) {
             count++;
-
             if (count % 5000 == 0) {
                 GTEST_LOG_(INFO) << count << " - Returned rid: " << rid.pageNum << " " << rid.slotNum;
             }
