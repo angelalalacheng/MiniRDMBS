@@ -46,9 +46,12 @@ namespace PeterDB {
         if (createTables == -1) return -1;
         RC createColumns = RecordBasedFileManager::instance().createFile("Columns");
         if (createColumns == -1) return -1;
+        RC createIndices = RecordBasedFileManager::instance().createFile("Indices");
+        if (createIndices == -1) return -1;
 
         FileHandle &fileHandleForTables = getFileHandle("Tables");
         FileHandle &fileHandleForColumns = getFileHandle("Columns");
+        FileHandle &fileHandleForIndices = getFileHandle("Indices");
 
         // use insertRecord
         insertTablesCatalogInfo(fileHandleForTables);
@@ -138,6 +141,9 @@ namespace PeterDB {
         while(rbfmScanIterator.getNextRecord(columnRid, data2) != RBFM_EOF){
             RecordBasedFileManager::instance().deleteRecord(fileHandleForColumns, getColumnsAttr(), columnRid);
         }
+
+        free(data2);
+        free(value2);
 
         return 0;
     }
@@ -332,12 +338,16 @@ namespace PeterDB {
     // TODO: What is the attribute of attributeName?? -> New file to store index info
     // TODO: insert/delete/update record should also modify the index file
     RC RelationManager::createIndex(const std::string &tableName, const std::string &attributeName){
+        if(fileHandleCache.find("Tables") == fileHandleCache.end() || fileHandleCache.find("Indices") == fileHandleCache.end()) return -1;
         RC createIndex = IndexManager::instance().createFile(tableName);
         if(createIndex == -1) return -1;
-//        FileHandle &fileHandle = getFileHandle(tableName);
+//      FileHandle &fileHandle = getFileHandle(tableName);
 
-        FileHandle &fileHandleForTables = getFileHandle(tableName);
-        int indexTableId = insertNewTableIntoTables(fileHandleForTables, tableName);
+        FileHandle &fileHandleForTables = getFileHandle("Tables");
+        FileHandle &fileHandleForIndices = getFileHandle("Indices");
+        int indexId = insertNewTableIntoTables(fileHandleForTables, tableName);
+        insertNewIndexIntoIndices(fileHandleForIndices, indexId, tableName, attributeName);
+
         return 0;
     }
 
@@ -346,11 +356,12 @@ namespace PeterDB {
         if(destroyIndex == -1) return -1;
 
         int tableNameLen = tableName.length();
-        void *value = malloc(sizeof(int) + tableNameLen);
-        memmove((char *) value, &tableNameLen, sizeof(int));
-        memmove((char *) value + sizeof(int), &tableName[0], tableNameLen);
+        char value [sizeof(int) + tableNameLen];
+        memmove(value, &tableNameLen, sizeof(int));
+        memmove(value + sizeof(int), &tableName[0], tableNameLen);
 
         FileHandle &fileHandleForTables = getFileHandle("Tables");
+        FileHandle &fileHandleForIndices = getFileHandle("Indices");
 
         std::vector<std::string> projectedAttr = {"table-id"};
 
@@ -359,17 +370,27 @@ namespace PeterDB {
         RecordBasedFileManager::instance().scan(fileHandleForTables, getTablesAttr(), "table-name", EQ_OP, value, projectedAttr, rbfmScanIterator);
 
         RID tableRid;
-        void* data = malloc(nullIndicatorSize + sizeof(int));
+        char data [nullIndicatorSize + sizeof(int)];
         int tableId;
         while(rbfmScanIterator.getNextRecord(tableRid, data) != RBFM_EOF) {
-            memmove(&tableId, (char *) data + nullIndicatorSize, sizeof(int));
+            memmove(&tableId, data + nullIndicatorSize, sizeof(int));
         }
 
         RecordBasedFileManager::instance().deleteRecord(fileHandleForTables, getTablesAttr(), tableRid);
         rbfmScanIterator.close();
 
-        free(data);
-        free(value);
+        char value2[sizeof(int)];
+        memmove(value2, &tableId, sizeof(int));
+        std::vector<std::string> projectedAttr2 = {"index-id"};
+
+        RecordBasedFileManager::instance().scan(fileHandleForIndices, getIndicesAttr(), "index-id", EQ_OP, value2, projectedAttr2, rbfmScanIterator);
+
+        RID indexRid;
+        char data2 [nullIndicatorSize + sizeof(int)];
+        while(rbfmScanIterator.getNextRecord(indexRid, data2) != RBFM_EOF){
+            RecordBasedFileManager::instance().deleteRecord(fileHandleForIndices, getIndicesAttr(), indexRid);
+        }
+
         return 0;
     }
 

@@ -70,13 +70,34 @@ std::vector<PeterDB::Attribute> getColumnsAttr(){
     return attrs;
 }
 
+std::vector<PeterDB::Attribute> getIndicesAttr(){
+    PeterDB::Attribute id;
+    id.name = "index-id";
+    id.length = (PeterDB::AttrLength) 4;
+    id.type = PeterDB::TypeInt;
+
+    PeterDB::Attribute indexName;
+    indexName.name = "index-name";
+    indexName.length = (PeterDB::AttrLength) 50;
+    indexName.type = PeterDB::TypeVarChar;
+
+    PeterDB::Attribute attributeName;
+    attributeName.name = "attribute-name";
+    attributeName.length = (PeterDB::AttrLength) 50;
+    attributeName.type = PeterDB::TypeVarChar;
+
+    std::vector<PeterDB::Attribute> attrs = {indexName, attributeName};
+
+    return attrs;
+}
+
 void insertTablesCatalogInfo(PeterDB::FileHandle &fileHandle){
     unsigned char* nullIndicator = getNullIndicator();
     PeterDB::RID rid;
 
-    std::vector<int> tableID = {1, 2};
-    std::vector<std::string> tableName = {"Tables", "Columns"};
-    std::vector<std::string> fileName = {"Tables", "Columns"};
+    std::vector<int> tableID = {1, 2, 3};
+    std::vector<std::string> tableName = {"Tables", "Columns", "Indices"};
+    std::vector<std::string> fileName = {"Tables", "Columns", "Indices"};
 
     for(int i = 0; i < tableName.size(); i++){
         unsigned offset = 0;
@@ -213,6 +234,30 @@ void insertNewAttrIntoColumns(PeterDB::FileHandle &fileHandle, const int tableId
 
         PeterDB::RecordBasedFileManager::instance().insertRecord(fileHandle, getColumnsAttr(), data, rid);
     }
+}
+
+void insertNewIndexIntoIndices(PeterDB::FileHandle &fileHandle, const int &indexId, const std::string &indexName, const std::string &attributeName){
+    unsigned char* nullIndicator = getNullIndicator();
+    PeterDB::RID rid;
+    unsigned offset = 0;
+    char data[100];
+
+    memmove(data + offset, nullIndicator, 1);
+    offset += 1;
+    memmove(data + offset, &indexId, sizeof(int));
+    offset += sizeof(int);
+    int indexNameLen = indexName.length();
+    memmove(data + offset, &indexNameLen, sizeof(int));
+    offset += sizeof(int);
+    memmove(data + offset, &indexName[0], indexNameLen);
+    offset += indexNameLen;
+    int attributeNameLen = attributeName.length();
+    memmove(data + offset, &attributeNameLen, sizeof(int));
+    offset += sizeof(int);
+    memmove(data + offset, &attributeName[0], attributeNameLen);
+    offset += attributeNameLen;
+
+    PeterDB::RecordBasedFileManager::instance().insertRecord(fileHandle, getIndicesAttr(), data, rid);
 }
 
 #endif //PETERDB_RM_UTILS_H
