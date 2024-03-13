@@ -137,7 +137,7 @@ void insertColumnsCatalogInfo(PeterDB::FileHandle &fileHandle) {
     }
 }
 
-int insertNewTableIntoTables(PeterDB::FileHandle &fileHandle, const std::string &tableName, const std::vector<PeterDB::Attribute> &attrs){
+int insertNewTableIntoTables(PeterDB::FileHandle &fileHandle, const std::string &tableName){
     PeterDB::RBFM_ScanIterator rbfm_ScanIterator;
     PeterDB::RecordBasedFileManager::instance().scan(fileHandle, getTablesAttr(), "table-id", PeterDB::NO_OP,
                                                      nullptr, {"table-id"}, rbfm_ScanIterator);

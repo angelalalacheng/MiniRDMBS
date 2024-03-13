@@ -147,7 +147,13 @@ void serializeData(const std::vector<int>& nullFlags, const std::vector<PeterDB:
         }
         else{
             int offVal;
-            memmove(&offVal, recordMeta + recordMetaSize - 2, 2);
+            if(i == 0){
+                offVal = (int)(sizeof(PeterDB::RID) + indicatorSize + recordDescriptor.size() * sizeof(short));
+            }
+            else{
+                memmove(&offVal, recordMeta + recordMetaSize - 2, 2);
+            }
+//            memmove(&offVal, recordMeta + recordMetaSize - 2, 2);
             memmove(recordMeta + recordMetaSize, &offVal, 2);
 //            std::cout << "offVal null " + std::to_string(i) + ": " << offVal <<std::endl;
         }
@@ -317,10 +323,7 @@ bool compareInt(const int &value1, const int &value2, PeterDB::CompOp operation)
             return value1 >= value2;
         case PeterDB::NE_OP:
             return value1 != value2;
-        case PeterDB::NO_OP:
-            return true;
         default:
-            std::cerr << "Unknown comparison operator." << std::endl;
             return false;
     }
 }
@@ -339,11 +342,7 @@ bool compareFloat(const float &value1, const float &value2, PeterDB::CompOp oper
             return value1 >= value2;
         case PeterDB::NE_OP:
             return value1 != value2;
-        case PeterDB::NO_OP:
-            // 在NO_OP情况下，你可能想要特殊处理，例如总是返回true或false
-            return true;
         default:
-            std::cerr << "Unknown comparison operator." << std::endl;
             return false;
     }
 }
@@ -362,11 +361,7 @@ bool compareString(const std::string& value1, const std::string& value2, PeterDB
             return value1 >= value2;
         case PeterDB::NE_OP:
             return value1 != value2;
-        case PeterDB::NO_OP:
-            // 在NO_OP情况下，你可能想要特殊处理，例如总是返回true或false
-            return true;
         default:
-            std::cerr << "Unknown comparison operator." << std::endl;
             return false;
     }
 }

@@ -88,7 +88,7 @@ namespace PeterDB {
 
         FileHandle &fileHandle = getFileHandle(tableName);
 
-        int tableId = insertNewTableIntoTables(fileHandleForTables, tableName, attrs);
+        int tableId = insertNewTableIntoTables(fileHandleForTables, tableName);
         insertNewAttrIntoColumns(fileHandleForColumns, tableId, tableName, attrs);
 
         return 0;
@@ -329,12 +329,48 @@ namespace PeterDB {
     }
 
     // QE IX related
+    // TODO: What is the attribute of attributeName?? -> New file to store index info
+    // TODO: insert/delete/update record should also modify the index file
     RC RelationManager::createIndex(const std::string &tableName, const std::string &attributeName){
-        return -1;
+        RC createIndex = IndexManager::instance().createFile(tableName);
+        if(createIndex == -1) return -1;
+//        FileHandle &fileHandle = getFileHandle(tableName);
+
+        FileHandle &fileHandleForTables = getFileHandle(tableName);
+        int indexTableId = insertNewTableIntoTables(fileHandleForTables, tableName);
+        return 0;
     }
 
     RC RelationManager::destroyIndex(const std::string &tableName, const std::string &attributeName){
-        return -1;
+        RC destroyIndex = IndexManager::instance().destroyFile(tableName);
+        if(destroyIndex == -1) return -1;
+
+        int tableNameLen = tableName.length();
+        void *value = malloc(sizeof(int) + tableNameLen);
+        memmove((char *) value, &tableNameLen, sizeof(int));
+        memmove((char *) value + sizeof(int), &tableName[0], tableNameLen);
+
+        FileHandle &fileHandleForTables = getFileHandle("Tables");
+
+        std::vector<std::string> projectedAttr = {"table-id"};
+
+        int nullIndicatorSize = 1;
+        RBFM_ScanIterator rbfmScanIterator;
+        RecordBasedFileManager::instance().scan(fileHandleForTables, getTablesAttr(), "table-name", EQ_OP, value, projectedAttr, rbfmScanIterator);
+
+        RID tableRid;
+        void* data = malloc(nullIndicatorSize + sizeof(int));
+        int tableId;
+        while(rbfmScanIterator.getNextRecord(tableRid, data) != RBFM_EOF) {
+            memmove(&tableId, (char *) data + nullIndicatorSize, sizeof(int));
+        }
+
+        RecordBasedFileManager::instance().deleteRecord(fileHandleForTables, getTablesAttr(), tableRid);
+        rbfmScanIterator.close();
+
+        free(data);
+        free(value);
+        return 0;
     }
 
     // indexScan returns an iterator to allow the caller to go through qualified entries in index
@@ -345,7 +381,13 @@ namespace PeterDB {
                  bool lowKeyInclusive,
                  bool highKeyInclusive,
                  RM_IndexScanIterator &rm_IndexScanIterator){
-        return -1;
+        if((fileHandleCache.find(tableName) == fileHandleCache.end())) return -1;
+        Attribute attr;
+        IXFileHandle ixFileHandle;
+        IndexManager::instance().openFile(tableName, ixFileHandle);
+        IndexManager::instance().scan(ixFileHandle, attr, lowKey, highKey, lowKeyInclusive, highKeyInclusive, rm_IndexScanIterator.ix_ScanIterator);
+
+        return 0;
     }
 
 
@@ -354,11 +396,15 @@ namespace PeterDB {
     RM_IndexScanIterator::~RM_IndexScanIterator() = default;
 
     RC RM_IndexScanIterator::getNextEntry(RID &rid, void *key){
-        return -1;
+        if(ix_ScanIterator.getNextEntry(rid, key) == -1){
+            return RM_EOF;
+        }
+        return 0;
     }
 
     RC RM_IndexScanIterator::close(){
-        return -1;
+        ix_ScanIterator.close();
+        return 0;
     }
 
 } // namespace PeterDB

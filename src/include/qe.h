@@ -25,6 +25,12 @@ namespace PeterDB {
         void *data;             // value
     } Value;
 
+    typedef struct Key {
+        AttrType type;          // type of key
+        void *joinVal;
+        void *data;             // key
+    } Key;
+
     typedef struct Condition {
         std::string lhsAttr;        // left-hand side attribute
         CompOp op;                  // comparison operator
@@ -159,6 +165,10 @@ namespace PeterDB {
     class Filter : public Iterator {
         // Filter operator
     public:
+        Iterator *input;
+        Condition condition;
+        std::vector<Attribute> inputAttrs;
+
         Filter(Iterator *input,               // Iterator of input R
                const Condition &condition     // Selection condition
         );
@@ -174,6 +184,10 @@ namespace PeterDB {
     class Project : public Iterator {
         // Projection operator
     public:
+        Iterator *input;
+        std::vector<Attribute> inputAttrs;
+        std::vector<std::string> outputAttrNames;
+
         Project(Iterator *input,                                // Iterator of input R
                 const std::vector<std::string> &attrNames);     // std::vector containing attribute names
         ~Project() override;
@@ -187,6 +201,19 @@ namespace PeterDB {
     class BNLJoin : public Iterator {
         // Block nested-loop join operator
     public:
+        Iterator *leftIn;
+        TableScan *rightIn;
+        Condition condition;
+        unsigned int numPages;
+        std::vector<Attribute> leftAttrs;
+        std::vector<Attribute> rightAttrs;
+        std::unordered_map<int, std::vector<Value>> hashTable;
+        std::vector<Value> currentMatchesWithLeftIn;
+        int currentMatchesIndex = 0;
+        bool needToLoadHashTable = true; // 需要重新加载左表数据
+        bool rightInEnd = false;
+        bool leftInEnd = false;
+
         BNLJoin(Iterator *leftIn,            // Iterator of input R
                 TableScan *rightIn,           // TableScan Iterator of input S
                 const Condition &condition,   // Join condition
@@ -200,6 +227,9 @@ namespace PeterDB {
 
         // For attribute in std::vector<Attribute>, name it as rel.attr
         RC getAttributes(std::vector<Attribute> &attrs) const override;
+
+        void loadHashTable();
+        void loadRightIn();
     };
 
     class INLJoin : public Iterator {

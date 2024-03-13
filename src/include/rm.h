@@ -5,6 +5,7 @@
 #include <vector>
 #include <unordered_map>
 #include "src/include/rbfm.h"
+#include "src/include/ix.h"
 
 namespace PeterDB {
 #define RM_EOF (-1)  // end of a scan operator
@@ -29,6 +30,8 @@ namespace PeterDB {
     public:
         RM_IndexScanIterator();    // Constructor
         ~RM_IndexScanIterator();    // Destructor
+
+        IX_ScanIterator ix_ScanIterator;
 
         // "key" follows the same format as in IndexManager::insertEntry()
         RC getNextEntry(RID &rid, void *key);    // Get next matching entry
@@ -82,7 +85,7 @@ namespace PeterDB {
 
         RC dropAttribute(const std::string &tableName, const std::string &attributeName);
 
-        // QE IX related
+        // QE IX related (Catalog how to maintain info of index file and index attribute, check attributeName is in table or not)
         RC createIndex(const std::string &tableName, const std::string &attributeName);
 
         RC destroyIndex(const std::string &tableName, const std::string &attributeName);
