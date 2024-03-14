@@ -1,5 +1,6 @@
 #include "src/include/qe.h"
 #include "qe.utils.h"
+#include <sstream>
 
 namespace PeterDB {
     Filter::Filter(Iterator *input, const Condition &condition) {
@@ -237,6 +238,106 @@ namespace PeterDB {
 
     RC BNLJoin::getAttributes(std::vector<Attribute> &attrs) const {
         attrs.clear();
+        for (const auto &attr: this->leftAttrs) {
+            attrs.push_back(attr);
+        }
+        for (const auto &attr: this->rightAttrs) {
+            attrs.push_back(attr);
+        }
+
+        return 0;
+    }
+
+    INLJoin::INLJoin(Iterator *leftIn, IndexScan *rightIn, const Condition &condition) {
+            this->leftIn = leftIn;
+            this->rightIn = rightIn;
+            this->condition = condition;
+            this->leftIn->getAttributes(this->leftAttrs);
+            this->rightIn->getAttributes(this->rightAttrs);
+    }
+
+    INLJoin::~INLJoin() {
+
+    }
+
+    RC INLJoin::getNextTuple(void *data) {
+        std::string tableName = this->rightAttrs[0].name.substr(0, this->rightAttrs[0].name.find('.'));
+        char bufferL[PAGE_SIZE];
+        memset(bufferL, 0, PAGE_SIZE);
+        char bufferR[PAGE_SIZE];
+        memset(bufferR, 0, PAGE_SIZE);
+
+        int nullIndicatorSizeL = getNullIndicatorSizeQE(this->leftAttrs.size());
+        int nullIndicatorSizeR = getNullIndicatorSizeQE(this->rightAttrs.size());
+
+        char nullIndicatorL[nullIndicatorSizeL];
+        char nullIndicatorR[nullIndicatorSizeR];
+
+        int joinAttrIdxL = getAttrIndex(this->leftAttrs, this->condition.lhsAttr);
+
+        std::vector<char> attrDataL;
+        if(IndexScanEnd){
+            int status = 0;
+            if ((status = this->leftIn->getNextTuple(bufferL)) == 0){
+                attrDataL.resize(100);
+                readAttributeValue(bufferL, nullIndicatorSizeL, this->leftAttrs, joinAttrIdxL, attrDataL.data());
+                if(this->leftAttrs[joinAttrIdxL].type == TypeVarChar){
+                    int len;
+                    memmove(&len, attrDataL.data(), sizeof (int));
+                    attrDataL.resize(len + sizeof(int));
+                }
+                else{
+                    attrDataL.resize(4);
+                }
+            }
+            this->rightIn->setIterator(attrDataL.data(), attrDataL.data(), true, true);
+            IndexScanEnd = false;
+
+            if(status == RM_EOF) LeftInEnd = true;
+        }
+
+        int status = 0;
+        while((status = this->rightIn->getNextTuple(bufferR)) == 0){
+            int joinNullIndicatorSize = getNullIndicatorSizeQE(this->leftAttrs.size() + this->rightAttrs.size());
+            char joinNullIndicator[joinNullIndicatorSize];
+            memset(joinNullIndicator, 0, joinNullIndicatorSize);
+            memmove(nullIndicatorL, bufferL, nullIndicatorSizeL);
+            memmove(nullIndicatorR, bufferR, nullIndicatorSizeR);
+            concatNullIndicator(joinNullIndicator, nullIndicatorL, nullIndicatorSizeL, nullIndicatorR, nullIndicatorSizeR, this->leftAttrs.size(), this->rightAttrs.size());
+
+            int leftDataSize = getDataSize(bufferL, this->leftAttrs);
+            int rightDataSize = getDataSize(bufferR, this->rightAttrs);
+
+            int offset = 0;
+            memmove((char *)data + offset, joinNullIndicator, joinNullIndicatorSize);
+            offset += joinNullIndicatorSize;
+            memmove((char *)data + offset, bufferL + nullIndicatorSizeL, leftDataSize - nullIndicatorSizeL);
+            offset += (leftDataSize - nullIndicatorSizeL);
+            memmove((char *)data + offset, bufferR + nullIndicatorSizeR, rightDataSize - nullIndicatorSizeR);
+            offset += (rightDataSize - nullIndicatorSizeR);
+
+//            std::stringstream stream;
+//            RelationManager::instance().printTuple(this->leftAttrs,  bufferL, stream);
+//            std::cout << "Left: " << stream.str() << std::endl;
+//            stream.str("");
+//            RelationManager::instance().printTuple(this->rightAttrs,  bufferR, stream);
+//            std::cout << "Right: " << stream.str() << std::endl;
+
+
+            return 0;
+        }
+
+        if (status == RM_EOF){
+            IndexScanEnd = true;
+            getNextTuple(data);
+        }
+
+        return LeftInEnd ? QE_EOF : 0;
+
+    }
+
+    RC INLJoin::getAttributes(std::vector<Attribute> &attrs) const {
+        attrs.clear();
         for (const auto &attr : this->leftAttrs) {
             attrs.push_back(attr);
         }
@@ -245,22 +346,6 @@ namespace PeterDB {
         }
 
         return 0;
-    }
-
-    INLJoin::INLJoin(Iterator *leftIn, IndexScan *rightIn, const Condition &condition) {
-
-    }
-
-    INLJoin::~INLJoin() {
-
-    }
-
-    RC INLJoin::getNextTuple(void *data) {
-        return -1;
-    }
-
-    RC INLJoin::getAttributes(std::vector<Attribute> &attrs) const {
-        return -1;
     }
 
     GHJoin::GHJoin(Iterator *leftIn, Iterator *rightIn, const Condition &condition, const unsigned int numPartitions) {

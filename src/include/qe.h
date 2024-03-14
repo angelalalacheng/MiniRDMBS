@@ -231,6 +231,14 @@ namespace PeterDB {
     class INLJoin : public Iterator {
         // Index nested-loop join operator
     public:
+        Iterator *leftIn;
+        IndexScan *rightIn;
+        Condition condition;
+        std::vector<Attribute> leftAttrs;
+        std::vector<Attribute> rightAttrs;
+        bool LeftInEnd = false;
+        bool IndexScanEnd = true;
+
         INLJoin(Iterator *leftIn,           // Iterator of input R
                 IndexScan *rightIn,          // IndexScan Iterator of input S
                 const Condition &condition   // Join condition
