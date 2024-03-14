@@ -25,12 +25,6 @@ namespace PeterDB {
         void *data;             // value
     } Value;
 
-    typedef struct Key {
-        AttrType type;          // type of key
-        void *joinVal;
-        void *data;             // key
-    } Key;
-
     typedef struct Condition {
         std::string lhsAttr;        // left-hand side attribute
         CompOp op;                  // comparison operator

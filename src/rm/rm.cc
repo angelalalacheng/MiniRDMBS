@@ -189,6 +189,7 @@ namespace PeterDB {
     }
 
     RC RelationManager::getAttributes(const std::string &tableName, std::vector<Attribute> &attrs) {
+        attrs.clear();
         std::vector<std::string> projectedAttrs1 = {"table-id"};
         std::vector<std::string> projectedAttrs2 = {"column-name", "column-type", "column-length"};
         int tableNameLen = tableName.length(), nullIndicatorSize = 1;
@@ -258,7 +259,7 @@ namespace PeterDB {
         // insert into index file
         std::vector<char> key;
         key.resize(100);
-        for (auto & indexFileAttribute : indexFileAttributes){
+        for (auto & indexFileAttribute : indexFileAttributesMap[tableName]){
             std::string indexFileName = tableName + indexFileAttribute + ".idx";
             if(ixFileHandleCache.find(indexFileName) == ixFileHandleCache.end()) return -1;
             IXFileHandle &ixFileHandle = getIXFileHandle(indexFileName);
@@ -401,9 +402,7 @@ namespace PeterDB {
     }
 
     // QE IX related
-    // TODO: What is the attribute of attributeName?? -> New file to store index info V
-    // TODO: insert/delete/update record should also modify the index file
-    // TODO: indexScan (where to open the index file)
+    // TODO: delete/update record should also modify the index file
     RC RelationManager::createIndex(const std::string &tableName, const std::string &attributeName){
         if(fileHandleCache.find("Tables") == fileHandleCache.end() || fileHandleCache.find("Indices") == fileHandleCache.end()) return -1;
         std::string indexFileName = tableName + attributeName +".idx";
@@ -416,7 +415,8 @@ namespace PeterDB {
         int indexId = insertNewTableIntoTables(fileHandleForTables, indexFileName);
         insertNewIndexIntoIndices(fileHandleForIndices, indexId, tableName, attributeName);
 
-        indexFileAttributes.push_back(attributeName);
+//        indexFileAttributes.push_back(attributeName);
+        indexFileAttributesMap[tableName].push_back(attributeName);
 
         FileHandle &fileHandle = getFileHandle(tableName);
         if (fileHandle.getNumberOfPages() >= 1){

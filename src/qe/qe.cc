@@ -138,12 +138,12 @@ namespace PeterDB {
         char buffer[PAGE_SIZE];
         memset(buffer, 0, PAGE_SIZE);
 
+        int joinAttrIdxL = getAttrIndex(this->leftAttrs, this->condition.lhsAttr);
+        AttrType joinAttrType = this->leftAttrs[joinAttrIdxL].type;
+        int len = this->leftAttrs[joinAttrIdxL].type == TypeVarChar ? this->leftAttrs[joinAttrIdxL].length + sizeof(int) : 4;
+
         // build the hash table
         while((status = this->leftIn->getNextTuple(buffer)) == 0 && memoryUsed < PAGE_SIZE * this->numPages){
-            int joinAttrIdxL = getAttrIndex(this->leftAttrs, this->condition.lhsAttr);
-            AttrType joinAttrType = this->leftAttrs[joinAttrIdxL].type;
-            int len = this->leftAttrs[joinAttrIdxL].type == TypeVarChar ? this->leftAttrs[joinAttrIdxL].length + sizeof(int) : 4;
-
             int dataSize = getDataSize(buffer, this->leftAttrs);
             char attrDataL[len]; // without null indicator
             readAttributeValue(buffer, getNullIndicatorSizeQE(this->leftAttrs.size()), this->leftAttrs, joinAttrIdxL, attrDataL);
@@ -223,10 +223,10 @@ namespace PeterDB {
             int offset = 0;
             memmove((char *)data + offset, joinNullIndicator, joinNullIndicatorSize);
             offset += joinNullIndicatorSize;
-            memmove((char *)data + offset, currentMatchesWithLeftIn[currentMatchesIndex].data, leftDataSize);
-            offset += leftDataSize;
-            memmove((char *)data + offset, buffer, rightDataSize);
-            offset += rightDataSize;
+            memmove((char *)data + offset, (char *)currentMatchesWithLeftIn[currentMatchesIndex].data + nullIndicatorSizeL, leftDataSize - nullIndicatorSizeL);
+            offset += (leftDataSize - nullIndicatorSizeL);
+            memmove((char *)data + offset, buffer + nullIndicatorSizeR, rightDataSize - nullIndicatorSizeR);
+            offset += (rightDataSize - nullIndicatorSizeR);
 
             currentMatchesIndex++;
             return 0;

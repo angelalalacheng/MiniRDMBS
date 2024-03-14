@@ -110,7 +110,7 @@ namespace PeterDB {
         RelationManager &operator=(const RelationManager &);                // Prevent assignment
         static std::unordered_map<std::string, FileHandle> fileHandleCache;
         static std::unordered_map<std::string, IXFileHandle> ixFileHandleCache;
-        std::vector<std::string> indexFileAttributes;
+        std::unordered_map<std::string, std::vector<std::string>> indexFileAttributesMap;
     };
 
 } // namespace PeterDB
