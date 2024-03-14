@@ -125,7 +125,8 @@ namespace PeterDB {
 
         // Constructor
         IXFileHandle();
-
+        // Move constructor
+        IXFileHandle(IXFileHandle &&other) noexcept;
         // Destructor
         ~IXFileHandle();
 

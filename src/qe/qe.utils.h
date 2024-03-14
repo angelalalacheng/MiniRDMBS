@@ -7,7 +7,7 @@
 
 #include "src/include/qe.h"
 
-int getNullIndicatorSize(int fields){
+int getNullIndicatorSizeQE(int fields){
     return ceil((double)fields / CHAR_BIT);
 }
 
@@ -44,7 +44,7 @@ int getAttrIndex(const std::vector<PeterDB::Attribute> &attrs, const std::string
     return -1;
 }
 
-bool compareInt(int intVal1, int intVal2, const PeterDB::CompOp &compOp) {
+bool compareIntVal(int intVal1, int intVal2, const PeterDB::CompOp &compOp) {
     switch (compOp) {
         case PeterDB::EQ_OP:
             return intVal1 == intVal2;
@@ -63,7 +63,7 @@ bool compareInt(int intVal1, int intVal2, const PeterDB::CompOp &compOp) {
     }
 }
 
-bool compareFloat(float floatVal1, float floatVal2, const PeterDB::CompOp &compOp) {
+bool compareFloatVal(float floatVal1, float floatVal2, const PeterDB::CompOp &compOp) {
     switch (compOp) {
         case PeterDB::EQ_OP:
             return floatVal1 == floatVal2;
@@ -82,7 +82,7 @@ bool compareFloat(float floatVal1, float floatVal2, const PeterDB::CompOp &compO
     }
 }
 
-bool compareString(const std::string& value1, const std::string& value2, PeterDB::CompOp operation) {
+bool compareStringVal(const std::string& value1, const std::string& value2, PeterDB::CompOp operation) {
     switch(operation) {
         case PeterDB::EQ_OP:
             return value1 == value2;
@@ -109,19 +109,19 @@ bool matchCondition (const char* left, const void *right, const PeterDB::CompOp 
             int intVal1, intVal2;
             intVal1 = *reinterpret_cast<const int*>(left);
             intVal2 = *reinterpret_cast<const int*>((const char*) right);
-            return compareInt(intVal1, intVal2, compOp);
+            return compareIntVal(intVal1, intVal2, compOp);
         case PeterDB::TypeReal:
             float floatVal1, floatVal2;
             floatVal1 = *reinterpret_cast<const float*>(left);
             floatVal2 = *reinterpret_cast<const float*>((const char*) right);
-            return compareFloat(floatVal1, floatVal2, compOp);
+            return compareFloatVal(floatVal1, floatVal2, compOp);
         case PeterDB::TypeVarChar:
             int length1, length2;
             memmove(&length1, left, sizeof(int));
             memmove(&length2, (char *)right, sizeof(int));
             std::string str1(static_cast<const char*>(left) + sizeof(int), length1);
             std::string str2(static_cast<const char*>(right) + sizeof(int), length2);
-            return compareString(str1, str2, compOp);
+            return compareStringVal(str1, str2, compOp);
     }
 }
 
@@ -162,7 +162,7 @@ int readAttributeValue(const void* data, int NullIndicateSize, const std::vector
 }
 
 int getDataSize(const void* data, const std::vector<PeterDB::Attribute>& attrs){
-    int nullIndicatorSize = getNullIndicatorSize(attrs.size());
+    int nullIndicatorSize = getNullIndicatorSizeQE(attrs.size());
     int offset = nullIndicatorSize;
     for(int i = 0; i < attrs.size(); i++){
         if(isNull((char *)data, nullIndicatorSize, i)){

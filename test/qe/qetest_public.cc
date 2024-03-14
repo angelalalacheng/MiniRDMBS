@@ -1159,7 +1159,7 @@ namespace PeterDBTesting {
             checkPrintRecord(expected[i], printed[i], false, {}, i % 50 == 0);
         }
     }
-
+// --------------------------------------------------------------------------------- //
     TEST_F(QE_Test, ghjoin_on_varchar) {
         // Extra credit
         // 1. GHJoin -- on TypeVARCHAR Attribute

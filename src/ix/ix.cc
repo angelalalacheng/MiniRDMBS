@@ -311,6 +311,13 @@ namespace PeterDB {
     IXFileHandle::~IXFileHandle() {
     }
 
+    IXFileHandle::IXFileHandle(IXFileHandle &&other) noexcept
+    : ixReadPageCounter(other.ixReadPageCounter),
+    ixWritePageCounter(other.ixWritePageCounter),
+    ixAppendPageCounter(other.ixAppendPageCounter),
+    fileHandle(std::move(other.fileHandle))
+    {}
+
     RC
     IXFileHandle::collectCounterValues(unsigned &readPageCount, unsigned &writePageCount, unsigned &appendPageCount) {
         setCounterValues();

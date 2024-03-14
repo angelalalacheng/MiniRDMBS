@@ -14,22 +14,22 @@ namespace PeterDB {
 
     RC Filter::getNextTuple(void *data) {
         int attrIdx = getAttrIndex(this->inputAttrs, this->condition.lhsAttr);
-        int nullIndicatorSize = getNullIndicatorSize(this->inputAttrs.size());
+        int nullIndicatorSize = getNullIndicatorSizeQE(this->inputAttrs.size());
 
         while (this->input->getNextTuple(data) == 0) {
-            if(condition.bRhsIsAttr){
+            if(!condition.bRhsIsAttr){
                 if (isNull((char *)data, nullIndicatorSize, attrIdx)) {
                     continue;
                 }
                 int len = this->inputAttrs[attrIdx].type == TypeVarChar ? this->inputAttrs[attrIdx].length + sizeof(int) : 4;
                 char lhsData[len]; // without null indicator
                 readAttributeValue(data, nullIndicatorSize, this->inputAttrs, attrIdx, lhsData);
-                if(matchCondition(lhsData, (char *)this->condition.rhsValue.data + 1, this->condition.op, this->condition.rhsValue.type)){
+                if(matchCondition(lhsData, this->condition.rhsValue.data, this->condition.op, this->condition.rhsValue.type)){
                     return 0;
                 }
             }
             else{
-                if (compareString(this->condition.lhsAttr, this->condition.rhsAttr, this->condition.op)) {
+                if (compareStringVal(this->condition.lhsAttr, this->condition.rhsAttr, this->condition.op)) {
                     return 0;
                 }
             }
@@ -55,9 +55,9 @@ namespace PeterDB {
     }
 
     RC Project::getNextTuple(void *data) {
-        int nullIndicatorSize = getNullIndicatorSize(this->inputAttrs.size());
+        int nullIndicatorSize = getNullIndicatorSizeQE(this->inputAttrs.size());
 
-        int projectNullIndicatorSize = getNullIndicatorSize(this->outputAttrNames.size());
+        int projectNullIndicatorSize = getNullIndicatorSizeQE(this->outputAttrNames.size());
         char projectNullIndicator[projectNullIndicatorSize];
         memset(projectNullIndicator, 0, projectNullIndicatorSize);
 
@@ -88,6 +88,7 @@ namespace PeterDB {
     }
 
     RC Project::getAttributes(std::vector<Attribute> &attrs) const {
+        attrs.clear();
         std::vector<Attribute> inputAttrs;
         this->input->getAttributes(inputAttrs);
 
@@ -145,7 +146,7 @@ namespace PeterDB {
 
             int dataSize = getDataSize(buffer, this->leftAttrs);
             char attrDataL[len]; // without null indicator
-            readAttributeValue(buffer, getNullIndicatorSize(this->leftAttrs.size()), this->leftAttrs, joinAttrIdxL, attrDataL);
+            readAttributeValue(buffer, getNullIndicatorSizeQE(this->leftAttrs.size()), this->leftAttrs, joinAttrIdxL, attrDataL);
 
             int key = *(int *)attrDataL;
             Value val;
@@ -177,8 +178,8 @@ namespace PeterDB {
         int len = this->leftAttrs[joinAttrIdxR].type == TypeVarChar ? this->leftAttrs[joinAttrIdxR].length + sizeof(int) : 4;
         int status = 0;
 
-        int nullIndicatorSizeL = getNullIndicatorSize(this->leftAttrs.size());
-        int nullIndicatorSizeR = getNullIndicatorSize(this->rightAttrs.size());
+        int nullIndicatorSizeL = getNullIndicatorSizeQE(this->leftAttrs.size());
+        int nullIndicatorSizeR = getNullIndicatorSizeQE(this->rightAttrs.size());
         char nullIndicatorL[nullIndicatorSizeL];
         char nullIndicatorR[nullIndicatorSizeR];
 
@@ -191,7 +192,7 @@ namespace PeterDB {
 
             while((status = this->rightIn->getNextTuple(buffer)) == 0){
                 char attrDataR[len];
-                readAttributeValue(buffer, getNullIndicatorSize(this->rightAttrs.size()), this->rightAttrs, joinAttrIdxR, attrDataR);
+                readAttributeValue(buffer, getNullIndicatorSizeQE(this->rightAttrs.size()), this->rightAttrs, joinAttrIdxR, attrDataR);
                 int key = *(int *)attrDataR;
 
                 if(hashTable.find(key) != hashTable.end()){
@@ -209,7 +210,7 @@ namespace PeterDB {
         }
 
         if (currentMatchesIndex < currentMatchesWithLeftIn.size()){
-            int joinNullIndicatorSize = getNullIndicatorSize(this->leftAttrs.size() + this->rightAttrs.size());
+            int joinNullIndicatorSize = getNullIndicatorSizeQE(this->leftAttrs.size() + this->rightAttrs.size());
             char joinNullIndicator[joinNullIndicatorSize];
             memset(joinNullIndicator, 0, joinNullIndicatorSize);
             memmove(nullIndicatorL, currentMatchesWithLeftIn[currentMatchesIndex].data, nullIndicatorSizeL);
@@ -235,7 +236,7 @@ namespace PeterDB {
     }
 
     RC BNLJoin::getAttributes(std::vector<Attribute> &attrs) const {
-
+        attrs.clear();
         for (const auto &attr : this->leftAttrs) {
             attrs.push_back(attr);
         }

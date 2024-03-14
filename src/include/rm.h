@@ -47,6 +47,10 @@ namespace PeterDB {
 
         static RC closeAndRemoveFileHandle(const std::string& fileName);
 
+        static IXFileHandle &getIXFileHandle(const std::string& indexFileName);
+
+        static RC closeAndRemoveIXFileHandle(const std::string& indexFileName);
+
         RC createCatalog();
 
         RC deleteCatalog();
@@ -105,7 +109,8 @@ namespace PeterDB {
         RelationManager(const RelationManager &);                           // Prevent construction by copying
         RelationManager &operator=(const RelationManager &);                // Prevent assignment
         static std::unordered_map<std::string, FileHandle> fileHandleCache;
-
+        static std::unordered_map<std::string, IXFileHandle> ixFileHandleCache;
+        std::vector<std::string> indexFileAttributes;
     };
 
 } // namespace PeterDB

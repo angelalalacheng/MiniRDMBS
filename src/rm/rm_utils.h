@@ -76,17 +76,17 @@ std::vector<PeterDB::Attribute> getIndicesAttr(){
     id.length = (PeterDB::AttrLength) 4;
     id.type = PeterDB::TypeInt;
 
-    PeterDB::Attribute indexName;
-    indexName.name = "index-name";
-    indexName.length = (PeterDB::AttrLength) 50;
-    indexName.type = PeterDB::TypeVarChar;
+    PeterDB::Attribute tableName;
+    tableName.name = "table-name";
+    tableName.length = (PeterDB::AttrLength) 50;
+    tableName.type = PeterDB::TypeVarChar;
 
     PeterDB::Attribute attributeName;
     attributeName.name = "attribute-name";
     attributeName.length = (PeterDB::AttrLength) 50;
     attributeName.type = PeterDB::TypeVarChar;
 
-    std::vector<PeterDB::Attribute> attrs = {indexName, attributeName};
+    std::vector<PeterDB::Attribute> attrs = {id, tableName, attributeName};
 
     return attrs;
 }
@@ -260,4 +260,49 @@ void insertNewIndexIntoIndices(PeterDB::FileHandle &fileHandle, const int &index
     PeterDB::RecordBasedFileManager::instance().insertRecord(fileHandle, getIndicesAttr(), data, rid);
 }
 
+std::unordered_map<std::string, PeterDB::Attribute> getAttrMap(const std::vector<PeterDB::Attribute> &attrs){
+    std::unordered_map<std::string, PeterDB::Attribute> attrMap;
+
+    for(const PeterDB::Attribute& attr: attrs){
+        attrMap[attr.name] = attr;
+    }
+
+    return attrMap;
+}
+
+void insertKeyFromTableToIndex(PeterDB::IXFileHandle &ixFileHandle, PeterDB::FileHandle &fileHandle, const std::vector<PeterDB::Attribute> &attrs, const std::string &indexAttrName){
+    std::vector<std::string> attrNames;
+    PeterDB::Attribute indexAttr;
+    for (const PeterDB::Attribute &attr : attrs) {
+        if (attr.name == indexAttrName) {
+            indexAttr = attr;
+        }
+        attrNames.push_back(attr.name);
+    }
+
+    PeterDB::RBFM_ScanIterator rbfm_ScanIterator;
+    PeterDB::RecordBasedFileManager::instance().scan(fileHandle, attrs, "", PeterDB::NO_OP, nullptr, attrNames, rbfm_ScanIterator);
+
+    PeterDB::RID rid;
+    std::vector<char> key;
+    char buffer[PAGE_SIZE];
+    while(rbfm_ScanIterator.getNextRecord(rid, buffer) != RBFM_EOF){
+        key.clear();
+        key.resize(100);
+        PeterDB::RecordBasedFileManager::instance().readAttribute(fileHandle, attrs, rid, indexAttrName, key.data());
+        if(indexAttr.type == PeterDB::TypeInt){
+            key.resize(sizeof(int));
+        }
+        else if(indexAttr.type == PeterDB::TypeReal){
+            key.resize(sizeof(float));
+        }
+        else if(indexAttr.type == PeterDB::TypeVarChar){
+            int len;
+            memmove(&len, key.data(), sizeof(int));
+            key.resize(sizeof(int) + len);
+        }
+        PeterDB::IndexManager::instance().insertEntry(ixFileHandle, indexAttr, key.data(), rid);
+    }
+    rbfm_ScanIterator.close();
+}
 #endif //PETERDB_RM_UTILS_H

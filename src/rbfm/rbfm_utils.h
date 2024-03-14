@@ -34,15 +34,6 @@ void setSpecificAttrNullFlag(unsigned char* indicator, int fieldIndex){
     indicator[byteIndex] |= (1 << bitPosition);
 }
 
-int getAttrIndex(const std::vector<PeterDB::Attribute> &recordDescriptor, const std::string &attributeName){
-    for(int i = 0; i < recordDescriptor.size(); i++){
-        if(recordDescriptor[i].name == attributeName){
-            return i + 1;
-        }
-    }
-    return -1;
-}
-
 short getSpecificAttrOffset(const char* record, int indicatorSize, int fields, int targetAttr){
     if (targetAttr == 0){
         return sizeof(PeterDB::RID) + indicatorSize + fields * sizeof(short);
@@ -363,33 +354,6 @@ bool compareString(const std::string& value1, const std::string& value2, PeterDB
             return value1 != value2;
         default:
             return false;
-    }
-}
-
-bool matchCondition (const char* field, const void *value, const PeterDB::CompOp &compOp, const PeterDB::AttrType type) {
-    if (compOp == PeterDB::NO_OP) return true;
-
-    switch(type) {
-        case PeterDB::TypeInt:
-            int intVal1, intVal2;
-            intVal1 = *reinterpret_cast<const int*>(field);
-            intVal2 = *reinterpret_cast<const int*>(value);
-            return compareInt(intVal1, intVal2, compOp);
-        case PeterDB::TypeReal:
-            float floatVal1, floatVal2;
-            floatVal1 = *reinterpret_cast<const float*>(field);
-            floatVal2 = *reinterpret_cast<const float*>(value);
-            return compareFloat(floatVal1, floatVal2, compOp);
-        case PeterDB::TypeVarChar:
-            int length1, length2;
-            memmove(&length1, field, sizeof(int));
-            memmove(&length2, (char *)value, sizeof(int));
-            std::string strVal1, strVal2;
-            strVal1.resize(length1);
-            memmove(&strVal1[0], field + sizeof(int), length1);
-            strVal2.resize(length2);
-            memmove(&strVal2[0], (char *)value + sizeof(int), length2);
-            return compareString(strVal1, strVal1, compOp);
     }
 }
 
