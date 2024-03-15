@@ -65,7 +65,6 @@ namespace PeterDB {
     }
 
     RC RelationManager::createCatalog() {
-//        std::cout << "create Catalog\n";
         RC createTables = RecordBasedFileManager::instance().createFile("Tables");
         if (createTables == -1) return -1;
         RC createColumns = RecordBasedFileManager::instance().createFile("Columns");
@@ -86,8 +85,6 @@ namespace PeterDB {
     }
 
     RC RelationManager::deleteCatalog() {
-//        std::cout << "### deleteCatalog"<< std::endl;
-// ERROR: error: File already exists
         if(fileHandleCache.find("Tables") == fileHandleCache.end() || fileHandleCache.find("Columns") == fileHandleCache.end() || fileHandleCache.find("Indices") == fileHandleCache.end()) return -1;
 
         if (closeAndRemoveFileHandle("Tables") != 0 || closeAndRemoveFileHandle("Columns") != 0 || closeAndRemoveFileHandle("Indices") != 0) return -1;
@@ -106,7 +103,6 @@ namespace PeterDB {
     }
 
     RC RelationManager::createTable(const std::string &tableName, const std::vector<Attribute> &attrs) {
-//        std::cout << "### createTable: " + tableName <<std::endl;
         if(tableName == "Tables" || tableName == "Columns") return -1;
         if(fileHandleCache.find("Tables") == fileHandleCache.end() || fileHandleCache.find("Columns") == fileHandleCache.end()) return -1;
 
@@ -124,7 +120,6 @@ namespace PeterDB {
     }
 
     RC RelationManager::deleteTable(const std::string &tableName) {
-//        std::cout << "### deleteTable: " + tableName << std::endl;
         if(tableName == "Tables" || tableName == "Columns") return -1;
         if((fileHandleCache.find(tableName) == fileHandleCache.end())) return -1;
 
@@ -255,44 +250,24 @@ namespace PeterDB {
         getAttributes(tableName, attrs);
         RecordBasedFileManager::instance().insertRecord(fileHandle, attrs, data, rid);
 
-        std::unordered_map<std::string, Attribute> attrMap = getAttrMap(attrs);
         // insert into index file
-        std::vector<char> key;
-        key.resize(100);
-        for (auto & indexFileAttribute : indexFileAttributesMap[tableName]){
-            std::string indexFileName = tableName + indexFileAttribute + ".idx";
-            if(ixFileHandleCache.find(indexFileName) == ixFileHandleCache.end()) return -1;
-            IXFileHandle &ixFileHandle = getIXFileHandle(indexFileName);
-
-            key.resize(100);
-            RecordBasedFileManager::instance().readAttribute(fileHandle, attrs, rid, indexFileAttribute, key.data());
-            AttrType type = attrMap[indexFileAttribute].type;
-            if(type == TypeInt){
-                key.resize(sizeof(int));
-            }
-            else if(type == TypeReal){
-                key.resize(sizeof(float));
-            }
-            else if(type == TypeVarChar){
-                int len;
-                memmove(&len, key.data(), sizeof(int));
-                key.resize(sizeof(int) + len);
-            }
-            IndexManager::instance().insertEntry(ixFileHandle, attrMap[indexFileAttribute], key.data(), rid);
-        }
+        handleRelatedIndex(INSERT_IDX, tableName, attrs, rid);
 
         return 0;
     }
 
     RC RelationManager::deleteTuple(const std::string &tableName, const RID &rid) {
         if(tableName == "Tables" || tableName == "Columns") return -1;
-        if((fileHandleCache.find(tableName) == fileHandleCache.end()) && (tableName != "rm_test_large_table")) return -1;
+        if(fileHandleCache.find(tableName) == fileHandleCache.end()) return -1;
 
         FileHandle &fileHandle = getFileHandle(tableName);
 
         std::vector<Attribute> attrs;
         getAttributes(tableName, attrs);
         RecordBasedFileManager::instance().deleteRecord(fileHandle, attrs, rid);
+
+        // delete index key
+        handleRelatedIndex(DELETE_IDX, tableName, attrs, rid);
 
         return 0;
     }
@@ -307,6 +282,10 @@ namespace PeterDB {
         getAttributes(tableName, attrs);
         RecordBasedFileManager::instance().updateRecord(fileHandle, attrs, data, rid);
 
+        // delete and reinsert key
+        handleRelatedIndex(DELETE_IDX, tableName, attrs, rid);
+        handleRelatedIndex(INSERT_IDX, tableName, attrs, rid);
+
         return 0;
     }
 
@@ -318,9 +297,7 @@ namespace PeterDB {
         getAttributes(tableName, attrs);
         RC readResult = RecordBasedFileManager::instance().readRecord(fileHandle, attrs, rid, data);
 
-        if(readResult == -1){
-            return -1;
-        }
+        if(readResult == -1) return -1;
 
         return 0;
     }
@@ -402,7 +379,6 @@ namespace PeterDB {
     }
 
     // QE IX related
-    // TODO: delete/update record should also modify the index file
     RC RelationManager::createIndex(const std::string &tableName, const std::string &attributeName){
         if(fileHandleCache.find("Tables") == fileHandleCache.end() || fileHandleCache.find("Indices") == fileHandleCache.end()) return -1;
         std::string indexFileName = tableName + attributeName +".idx";
@@ -415,12 +391,10 @@ namespace PeterDB {
         int indexId = insertNewTableIntoTables(fileHandleForTables, indexFileName);
         insertNewIndexIntoIndices(fileHandleForIndices, indexId, tableName, attributeName);
 
-//        indexFileAttributes.push_back(attributeName);
         indexFileAttributesMap[tableName].push_back(attributeName);
 
         FileHandle &fileHandle = getFileHandle(tableName);
         if (fileHandle.getNumberOfPages() >= 1){
-            std::cout << attributeName << " already has data\n";
             std::vector<Attribute> attrs;
             getAttributes(tableName, attrs);
             insertKeyFromTableToIndex(ixFileHandle, fileHandle, attrs, attributeName);
@@ -435,6 +409,43 @@ namespace PeterDB {
         RC destroyIndex = IndexManager::instance().destroyFile(indexFileName);
         if(destroyIndex == -1) return -1;
 
+        return 0;
+    }
+
+    RC RelationManager::handleRelatedIndex(const Mode mode, const std::string &tableName, std::vector<Attribute> &attrs, const RID &rid){
+        FileHandle &fileHandle = getFileHandle(tableName);
+        std::unordered_map<std::string, Attribute> attrMap = getAttrMap(attrs);
+
+        std::vector<char> key;
+        for(auto & indexFileAttribute : indexFileAttributesMap[tableName]){
+            std::string indexFileName = tableName + indexFileAttribute + ".idx";
+            if(ixFileHandleCache.find(indexFileName) == ixFileHandleCache.end()) return -1;
+            IXFileHandle &ixFileHandle = getIXFileHandle(indexFileName);
+
+            key.resize(100);
+            RecordBasedFileManager::instance().readAttribute(fileHandle, attrs, rid, indexFileAttribute, key.data());
+            AttrType type = attrMap[indexFileAttribute].type;
+            if(type == TypeInt){
+                key.resize(sizeof(int));
+            }
+            else if(type == TypeReal){
+                key.resize(sizeof(float));
+            }
+            else if(type == TypeVarChar){
+                int len;
+                memmove(&len, key.data(), sizeof(int));
+                key.resize(sizeof(int) + len);
+            }
+
+
+            if(mode == INSERT_IDX){
+                IndexManager::instance().insertEntry(ixFileHandle, attrMap[indexFileAttribute], key.data(), rid);
+            }
+            if(mode == DELETE_IDX){
+                IndexManager::instance().deleteEntry(ixFileHandle, attrMap[indexFileAttribute], key.data(), rid);
+            }
+
+        }
         return 0;
     }
 

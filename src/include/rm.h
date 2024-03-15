@@ -10,6 +10,11 @@
 namespace PeterDB {
 #define RM_EOF (-1)  // end of a scan operator
 
+    typedef enum {
+        INSERT_IDX = 0,
+        DELETE_IDX
+    } Mode;
+
     // RM_ScanIterator is an iterator to go through tuples
     class RM_ScanIterator {
     public:
@@ -93,6 +98,8 @@ namespace PeterDB {
         RC createIndex(const std::string &tableName, const std::string &attributeName);
 
         RC destroyIndex(const std::string &tableName, const std::string &attributeName);
+
+        RC handleRelatedIndex(const Mode mode, const std::string &tableName, std::vector<Attribute> &attrs, const RID &rid);
 
         // indexScan returns an iterator to allow the caller to go through qualified entries in index
         RC indexScan(const std::string &tableName,
