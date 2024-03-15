@@ -169,7 +169,7 @@ namespace PeterDB {
     void BNLJoin::loadRightIn() {
         this->rightIn->setIterator();
     }
-
+    // TODO: support float and varchar type
     RC BNLJoin::getNextTuple(void *data) {
         if(needToLoadHashTable){
             loadHashTable();
@@ -259,7 +259,7 @@ namespace PeterDB {
     INLJoin::~INLJoin() {
 
     }
-
+    // TODO: 感覺可以寫得更好？不用recursive 還有return條件 好像怪怪的
     RC INLJoin::getNextTuple(void *data) {
         std::string tableName = this->rightAttrs[0].name.substr(0, this->rightAttrs[0].name.find('.'));
         char bufferL[PAGE_SIZE];
@@ -365,7 +365,10 @@ namespace PeterDB {
     }
 
     Aggregate::Aggregate(Iterator *input, const Attribute &aggAttr, AggregateOp op) {
-
+        this->input = input;
+        this->aggAttr = aggAttr;
+        this->op = op;
+        this->input->getAttributes(this->inputAttrs);
     }
 
     Aggregate::Aggregate(Iterator *input, const Attribute &aggAttr, const Attribute &groupAttr, AggregateOp op) {
@@ -377,10 +380,85 @@ namespace PeterDB {
     }
 
     RC Aggregate::getNextTuple(void *data) {
-        return -1;
+        if (aggregateEnd) return QE_EOF;
+
+        AttrType aggAttrType = this->aggAttr.type;
+        int nullIndicatorSize = getNullIndicatorSizeQE(this->inputAttrs.size());
+        char buffer[PAGE_SIZE];
+        memset(buffer, 0, PAGE_SIZE);
+
+        int attrIdx = getAttrIndex(this->inputAttrs, this->aggAttr.name);
+        while (this->input->getNextTuple(buffer) == 0){
+            char aggrData[4];
+            if (isNull(buffer, nullIndicatorSize, attrIdx)) {
+                continue;
+            }
+            readAttributeValue(buffer, nullIndicatorSize, this->inputAttrs, attrIdx, aggrData);
+
+            if (aggAttrType == TypeInt) values.push_back(*(int *)aggrData);
+            else if (aggAttrType == TypeReal) values.push_back(*(float *)aggrData);
+        }
+
+        float result = 0;
+        switch(this->op){
+            case PeterDB::MIN:
+                std::sort(values.begin(), values.end());
+                result = values[0];
+                break;
+            case PeterDB::MAX:
+                std::sort(values.begin(), values.end(), std::greater<int>());
+                result = values[0];
+                break;
+            case PeterDB::COUNT:
+                result = values.size();
+                break;
+            case PeterDB::SUM:
+                for(float val : values){
+                    result += val;
+                }
+                break;
+            case PeterDB::AVG:
+                for(float val : values){
+                    result += val;
+                }
+                result /= values.size();
+                break;
+        }
+        char nullIndicator[1];
+        memset(nullIndicator, 0, 1);
+
+        memmove((char *)data, nullIndicator, 1);
+        memmove((char *)data + 1, &result, sizeof(float));
+
+        aggregateEnd = true;
+        return 0;
     }
 
     RC Aggregate::getAttributes(std::vector<Attribute> &attrs) const {
-        return -1;
+        attrs.clear();
+        Attribute attr = this->aggAttr;
+
+        switch (this->op) {
+            case MIN:
+                attr.name = "MIN(" + this->aggAttr.name + ")";
+                break;
+            case MAX:
+                attr.name = "MAX(" + this->aggAttr.name + ")";
+                break;
+            case SUM:
+                attr.name = "SUM(" + this->aggAttr.name + ")";
+                break;
+            case AVG:
+                attr.name = "AVG(" + this->aggAttr.name + ")";
+                break;
+            case COUNT:
+                attr.name = "COUNT(" + this->aggAttr.name + ")";
+                break;
+        }
+
+        attr.type = TypeReal;
+        attrs.push_back(attr);
+
+        return 0;
     }
 } // namespace PeterDB

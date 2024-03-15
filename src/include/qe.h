@@ -273,6 +273,13 @@ namespace PeterDB {
     class Aggregate : public Iterator {
         // Aggregation operator
     public:
+        Iterator *input;
+        Attribute aggAttr;
+        AggregateOp op;
+        std::vector<Attribute> inputAttrs;
+        std::vector<float> values;
+        bool aggregateEnd = false;
+
         // Mandatory
         // Basic aggregation
         Aggregate(Iterator *input,          // Iterator of input R
