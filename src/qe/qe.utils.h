@@ -6,7 +6,9 @@
 #define PETERDB_QE_UTILS_H
 
 #include "src/include/qe.h"
-#include <sstream>
+#include <cstring>
+#include <algorithm>
+#include <climits>
 
 int getNullIndicatorSizeQE(int fields){
     return ceil((double)fields / CHAR_BIT);
