@@ -7,8 +7,9 @@
 
 #include "src/include/qe.h"
 #include <cstring>
-#include <algorithm>
+#include <cmath>
 #include <climits>
+#include <algorithm>
 
 int getNullIndicatorSizeQE(int fields){
     return ceil((double)fields / CHAR_BIT);
@@ -126,6 +127,7 @@ bool matchCondition (const char* left, const void *right, const PeterDB::CompOp 
             std::string str2(static_cast<const char*>(right) + sizeof(int), length2);
             return compareStringVal(str1, str2, compOp);
     }
+    return false;
 }
 
 int readAttributeValue(const void* data, int NullIndicateSize, const std::vector<PeterDB::Attribute>& inputAttrs, int attrIdx, char *leftValue){
@@ -162,6 +164,8 @@ int readAttributeValue(const void* data, int NullIndicateSize, const std::vector
             memmove(leftValue, (char *)data + offset, sizeof(int) + length);
             return sizeof(int) + length;
     }
+
+    return -1;
 }
 
 int getDataSize(const void* data, const std::vector<PeterDB::Attribute>& attrs){
@@ -187,81 +191,4 @@ int getDataSize(const void* data, const std::vector<PeterDB::Attribute>& attrs){
     }
     return offset;
 }
-
-void aggregateInt(PeterDB::AggregateOp aggOp, std::vector<int> &intValues, void* result){
-    char nullIndicator[1];
-    memset(nullIndicator, 0, 1);
-
-    int intResult = 0;
-    int averageResult = 0;
-    switch(aggOp){
-        case PeterDB::MIN:
-            std::sort(intValues.begin(), intValues.end());
-            intResult = intValues[0];
-            break;
-        case PeterDB::MAX:
-            std::sort(intValues.begin(), intValues.end(), std::greater<int>());
-            intResult = intValues[0];
-            break;
-        case PeterDB::COUNT:
-            intResult = intValues.size();
-            break;
-        case PeterDB::SUM:
-            for(int intValue : intValues){
-                intResult += intValue;
-            }
-            break;
-        case PeterDB::AVG:
-            for(int intValue : intValues){
-                intResult += intValue;
-            }
-            averageResult = (float)intResult / intValues.size();
-            break;
-    }
-
-    memmove((char *)result, nullIndicator, 1);
-    if (aggOp == PeterDB::AVG){
-        std::cout << "averageResult: " <<averageResult <<std::endl;
-        memmove((char *)result + 1, &averageResult, sizeof(float));
-    }
-    else memmove((char *)result + 1, &intResult, sizeof(int));
-
-}
-
-void aggregateFloat(PeterDB::AggregateOp aggOp, std::vector<float> &floatValues, void* result){
-    char nullIndicator[1];
-    memset(nullIndicator, 0, 1);
-
-    float floatResult = 0;
-    int countResult = 0;
-    switch(aggOp){
-        case PeterDB::MIN:
-            std::sort(floatValues.begin(), floatValues.end());
-            floatResult = floatValues[0];
-            break;
-        case PeterDB::MAX:
-            std::sort(floatValues.begin(), floatValues.end(), std::greater<float>());
-            floatResult = floatValues[0];
-            break;
-        case PeterDB::COUNT:
-            countResult = (int)floatValues.size();
-            break;
-        case PeterDB::SUM:
-            for(float floatValue : floatValues){
-                floatResult += floatValue;
-            }
-            break;
-        case PeterDB::AVG:
-            for(float floatValue : floatValues){
-                floatResult += floatValue;
-            }
-            floatResult /= floatValues.size();
-            break;
-    }
-
-    memmove((char *)result, nullIndicator, 1);
-    if (aggOp == PeterDB::COUNT) memmove((char *)result + 1, &countResult, sizeof(int));
-    else memmove((char *)result + 1, &floatResult, sizeof(float));
-}
-
 #endif //PETERDB_QE_UTILS_H
