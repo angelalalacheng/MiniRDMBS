@@ -206,9 +206,10 @@ namespace PeterDB {
         std::unordered_map<int, std::vector<Value>> hashTable;
         std::vector<Value> currentMatchesWithLeftIn;
         int currentMatchesIndex = 0;
-        bool needToLoadHashTable = true; // 需要重新加载左表数据
+        bool needToLoadHashTable = true;
         bool rightInEnd = false;
         bool leftInEnd = false;
+        char bufferRightIn[PAGE_SIZE];
 
         BNLJoin(Iterator *leftIn,            // Iterator of input R
                 TableScan *rightIn,           // TableScan Iterator of input S
@@ -224,7 +225,7 @@ namespace PeterDB {
         // For attribute in std::vector<Attribute>, name it as rel.attr
         RC getAttributes(std::vector<Attribute> &attrs) const override;
 
-        void loadHashTable();
+        RC loadHashTable();
         void loadRightIn();
     };
 

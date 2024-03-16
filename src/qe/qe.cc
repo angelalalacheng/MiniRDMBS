@@ -111,6 +111,7 @@ namespace PeterDB {
         this->numPages = numPages;
         this->leftIn->getAttributes(this->leftAttrs);
         this->rightIn->getAttributes(this->rightAttrs);
+        this->loadHashTable();
     }
 
     BNLJoin::~BNLJoin() {
@@ -133,7 +134,7 @@ namespace PeterDB {
         this->hashTable.clear();
     }
 
-    void BNLJoin::loadHashTable() {
+    RC BNLJoin::loadHashTable() {
         hashTable.clear();
         int memoryUsed = 0, status = 0;
         char buffer[PAGE_SIZE];
@@ -144,7 +145,10 @@ namespace PeterDB {
         int len = this->leftAttrs[joinAttrIdxL].type == TypeVarChar ? this->leftAttrs[joinAttrIdxL].length + sizeof(int) : 4;
 
         // build the hash table
-        while((status = this->leftIn->getNextTuple(buffer)) == 0 && memoryUsed < PAGE_SIZE * this->numPages){
+        while(memoryUsed < PAGE_SIZE * this->numPages){
+            status = this->leftIn->getNextTuple(buffer);
+            if (status != 0) break;
+
             int dataSize = getDataSize(buffer, this->leftAttrs);
             char attrDataL[len]; // without null indicator
             readAttributeValue(buffer, getNullIndicatorSizeQE(this->leftAttrs.size()), this->leftAttrs, joinAttrIdxL, attrDataL);
@@ -163,77 +167,72 @@ namespace PeterDB {
         if (status == QE_EOF){
             leftInEnd = true;
         }
-        needToLoadHashTable = false;
-    }
+
+        return 0;
+   }
 
     void BNLJoin::loadRightIn() {
         this->rightIn->setIterator();
     }
     // TODO: support float and varchar type
     RC BNLJoin::getNextTuple(void *data) {
-        if(needToLoadHashTable){
-            loadHashTable();
-        }
+        int rightInStatus = 0;
 
-        int joinAttrIdxR = getAttrIndex(this->rightAttrs, this->condition.rhsAttr);
-        int len = this->leftAttrs[joinAttrIdxR].type == TypeVarChar ? this->leftAttrs[joinAttrIdxR].length + sizeof(int) : 4;
-        int status = 0;
+        while(true){
+            if (!currentMatchesWithLeftIn.empty() && currentMatchesIndex < currentMatchesWithLeftIn.size()){
+                int joinNullIndicatorSize = getNullIndicatorSizeQE(this->leftAttrs.size() + this->rightAttrs.size());
+                char joinNullIndicator[joinNullIndicatorSize];
+                memset(joinNullIndicator, 0, joinNullIndicatorSize);
+                int nullIndicatorSizeL = getNullIndicatorSizeQE(this->leftAttrs.size());
+                int nullIndicatorSizeR = getNullIndicatorSizeQE(this->rightAttrs.size());
+                char nullIndicatorL[nullIndicatorSizeL];
+                char nullIndicatorR[nullIndicatorSizeR];
+                memmove(nullIndicatorL, currentMatchesWithLeftIn[currentMatchesIndex].data, nullIndicatorSizeL);
+                memmove(nullIndicatorR, bufferRightIn, nullIndicatorSizeR);
+                concatNullIndicator(joinNullIndicator, nullIndicatorL, nullIndicatorSizeL, nullIndicatorR, nullIndicatorSizeR, this->leftAttrs.size(), this->rightAttrs.size());
 
-        int nullIndicatorSizeL = getNullIndicatorSizeQE(this->leftAttrs.size());
-        int nullIndicatorSizeR = getNullIndicatorSizeQE(this->rightAttrs.size());
-        char nullIndicatorL[nullIndicatorSizeL];
-        char nullIndicatorR[nullIndicatorSizeR];
+                int leftDataSize = getDataSize(currentMatchesWithLeftIn[currentMatchesIndex].data, this->leftAttrs);
+                int rightDataSize = getDataSize(bufferRightIn, this->rightAttrs);
 
-        char buffer[PAGE_SIZE];
-        memset(buffer, 0, PAGE_SIZE);
+                int offset = 0;
+                memmove((char *)data + offset, joinNullIndicator, joinNullIndicatorSize);
+                offset += joinNullIndicatorSize;
+                memmove((char *)data + offset, (char *)currentMatchesWithLeftIn[currentMatchesIndex].data + nullIndicatorSizeL, leftDataSize - nullIndicatorSizeL);
+                offset += (leftDataSize - nullIndicatorSizeL);
+                memmove((char *)data + offset, bufferRightIn + nullIndicatorSizeR, rightDataSize - nullIndicatorSizeR);
+                offset += (rightDataSize - nullIndicatorSizeR);
 
-        if (currentMatchesWithLeftIn.empty() || currentMatchesIndex >= currentMatchesWithLeftIn.size()){
-            currentMatchesWithLeftIn.clear();
-            currentMatchesIndex = 0;
+                currentMatchesIndex++;
+                return 0;
+            }
+            else{
+                rightInStatus = this->rightIn->getNextTuple(bufferRightIn);
 
-            while((status = this->rightIn->getNextTuple(buffer)) == 0){
-                char attrDataR[len];
-                readAttributeValue(buffer, getNullIndicatorSizeQE(this->rightAttrs.size()), this->rightAttrs, joinAttrIdxR, attrDataR);
-                int key = *(int *)attrDataR;
+                if (rightInStatus == 0){
+                    char attrDataR[4];
+                    readAttributeValue(bufferRightIn, getNullIndicatorSizeQE(this->rightAttrs.size()), this->rightAttrs, 0, attrDataR);
+                    int key = *(int *)attrDataR;
 
-                if(hashTable.find(key) != hashTable.end()){
-                    currentMatchesWithLeftIn = hashTable[key];
-                    break;
+                    if(hashTable.find(key) != hashTable.end()){
+                        currentMatchesIndex = 0;
+                        currentMatchesWithLeftIn.clear();
+                        currentMatchesWithLeftIn = hashTable[key];
+                    }
+                }
+                else{
+                    if (!leftInEnd){
+                        loadRightIn();
+                        rightInStatus = 0;
+                        loadHashTable();
+                    }
+                    else{
+                        break;
+                    }
                 }
             }
-            if(status == QE_EOF && !leftInEnd){
-                loadRightIn();
-                needToLoadHashTable = true;
-            }
-            else if(status == QE_EOF && leftInEnd){
-                return QE_EOF;
-            }
         }
 
-        if (currentMatchesIndex < currentMatchesWithLeftIn.size()){
-            int joinNullIndicatorSize = getNullIndicatorSizeQE(this->leftAttrs.size() + this->rightAttrs.size());
-            char joinNullIndicator[joinNullIndicatorSize];
-            memset(joinNullIndicator, 0, joinNullIndicatorSize);
-            memmove(nullIndicatorL, currentMatchesWithLeftIn[currentMatchesIndex].data, nullIndicatorSizeL);
-            memmove(nullIndicatorR, buffer, nullIndicatorSizeR);
-            concatNullIndicator(joinNullIndicator, nullIndicatorL, nullIndicatorSizeL, nullIndicatorR, nullIndicatorSizeR, this->leftAttrs.size(), this->rightAttrs.size());
-
-            int leftDataSize = getDataSize(currentMatchesWithLeftIn[currentMatchesIndex].data, this->leftAttrs);
-            int rightDataSize = getDataSize(buffer, this->rightAttrs);
-
-            int offset = 0;
-            memmove((char *)data + offset, joinNullIndicator, joinNullIndicatorSize);
-            offset += joinNullIndicatorSize;
-            memmove((char *)data + offset, (char *)currentMatchesWithLeftIn[currentMatchesIndex].data + nullIndicatorSizeL, leftDataSize - nullIndicatorSizeL);
-            offset += (leftDataSize - nullIndicatorSizeL);
-            memmove((char *)data + offset, buffer + nullIndicatorSizeR, rightDataSize - nullIndicatorSizeR);
-            offset += (rightDataSize - nullIndicatorSizeR);
-
-            currentMatchesIndex++;
-            return 0;
-        }
-
-        return QE_EOF;
+        return (leftInEnd && rightInStatus == RM_EOF) ? QE_EOF : 0;
     }
 
     RC BNLJoin::getAttributes(std::vector<Attribute> &attrs) const {
@@ -315,14 +314,6 @@ namespace PeterDB {
             offset += (leftDataSize - nullIndicatorSizeL);
             memmove((char *)data + offset, bufferR + nullIndicatorSizeR, rightDataSize - nullIndicatorSizeR);
             offset += (rightDataSize - nullIndicatorSizeR);
-
-//            std::stringstream stream;
-//            RelationManager::instance().printTuple(this->leftAttrs,  bufferL, stream);
-//            std::cout << "Left: " << stream.str() << std::endl;
-//            stream.str("");
-//            RelationManager::instance().printTuple(this->rightAttrs,  bufferR, stream);
-//            std::cout << "Right: " << stream.str() << std::endl;
-
 
             return 0;
         }
