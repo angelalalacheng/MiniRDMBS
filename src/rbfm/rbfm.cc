@@ -296,17 +296,16 @@ namespace PeterDB {
             memmove(buffer + targetRecord.offset + updatedRecordLength, buffer + targetRecord.offset + targetRecord.len, lastPositionOfAllRecords - startPositionOfRemainRecord);
             memmove(buffer + targetRecord.offset, serializeUpdatedData, updatedRecordLength);
 
-            // update length of target record
-            targetRecord.len = updatedRecordLength;
-            memmove(buffer + PAGE_SIZE - DIR_META - SLOT_DIR_SIZE * targetRID.slotNum, &targetRecord, SLOT_DIR_SIZE);
-
             // update remained slot
-            if(updatedRecordLength < targetRecord.len){ // shift left
+            if(updatedRecordLength <= targetRecord.len){ // shift left
                 updateSlotDirectory(buffer, pageInfo[1], targetRID.slotNum, abs(delta), 0);
             }
             else{ // shift right
                 updateSlotDirectory(buffer, pageInfo[1], targetRID.slotNum, abs(delta), 1);
             }
+            // update length of target record
+            targetRecord.len = updatedRecordLength;
+            memmove(buffer + PAGE_SIZE - DIR_META - SLOT_DIR_SIZE * targetRID.slotNum, &targetRecord, SLOT_DIR_SIZE);
         }
         else{
             // insert the update record to new page

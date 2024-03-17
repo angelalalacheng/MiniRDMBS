@@ -264,10 +264,9 @@ namespace PeterDB {
 
         std::vector<Attribute> attrs;
         getAttributes(tableName, attrs);
-        RecordBasedFileManager::instance().deleteRecord(fileHandle, attrs, rid);
-
         // delete index key
         handleRelatedIndex(DELETE_IDX, tableName, attrs, rid);
+        RecordBasedFileManager::instance().deleteRecord(fileHandle, attrs, rid);
 
         return 0;
     }
@@ -280,10 +279,10 @@ namespace PeterDB {
 
         std::vector<Attribute> attrs;
         getAttributes(tableName, attrs);
+        handleRelatedIndex(DELETE_IDX, tableName, attrs, rid);
         RecordBasedFileManager::instance().updateRecord(fileHandle, attrs, data, rid);
 
         // delete and reinsert key
-        handleRelatedIndex(DELETE_IDX, tableName, attrs, rid);
         handleRelatedIndex(INSERT_IDX, tableName, attrs, rid);
 
         return 0;
