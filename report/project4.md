@@ -66,20 +66,20 @@ I also save `Indices` information in the `Tables` file.
 - Have you added your own module or source file (.cc or .h)?
   Clearly list the changes on files and CMakeLists.txt, if any.
 
-- Yes, I added the qe_util.h to help the implementation of the index manager.
-- I put some helper functions in the qe_util.h.
+  - Yes, I added the qe_util.h to help the implementation of the index manager.
+  - I put some helper functions in the qe_util.h.
 
 - Other implementation details:
 
-- Use 'ixFileHandleCache' to cache the file handle of the index file.
-- When do thw insert / delete / update operation on heap file, I also do the same operation on the index file.
+  - Use 'ixFileHandleCache' to cache the file handle of the index file.
+  - When do thw insert / delete / update operation on heap file, I also do the same operation on the index file.
 
 
 
 ### 10. Member contribution (for team of two)
 - Explain how you distribute the workload in team.
 
-N/A
+  - N/A
 
 ### 11. Other (optional)
 - Freely use this section to tell us about things that are related to the project 4, but not related to the other sections (optional)

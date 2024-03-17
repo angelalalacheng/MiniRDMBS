@@ -14,7 +14,7 @@
 For example, using breakpoints, step in/step out/step over, evaluate expressions, etc.
 
 I use breakpoints and set the conditions to check where it is wrong with step over.
-![image](https://github.com/angelalalacheng/cs222-winter24-YunJung/blob/main/report/reportImage/p3_debugger.png)
+![image](https://github.com/angelalalacheng/cs222-winter24-YunJung/blob/main/report/reportImage/p4_debugger.png)
 
 ### 3. Using Valgrind
 - Describe how you use Valgrind to detect memory leaks and other problems in your code and show screenshot of the Valgrind report.
