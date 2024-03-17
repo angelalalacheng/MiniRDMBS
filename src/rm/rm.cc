@@ -273,8 +273,7 @@ namespace PeterDB {
 
     RC RelationManager::updateTuple(const std::string &tableName, const void *data, const RID &rid) {
         if(tableName == "Tables" || tableName == "Columns") return -1;
-        if((fileHandleCache.find(tableName) == fileHandleCache.end()) && (tableName != "rm_test_large_table")) return -1;
-        if(tableName == "rm_test_large_table") return 0;
+        if((fileHandleCache.find(tableName) == fileHandleCache.end())) return -1;
         FileHandle &fileHandle = getFileHandle(tableName);
 
         std::vector<Attribute> attrs;
@@ -289,7 +288,7 @@ namespace PeterDB {
     }
 
     RC RelationManager::readTuple(const std::string &tableName, const RID &rid, void *data) {
-        if((fileHandleCache.find(tableName) == fileHandleCache.end()) && (tableName != "rm_test_large_table")) return -1;
+        if((fileHandleCache.find(tableName) == fileHandleCache.end())) return -1;
         FileHandle &fileHandle = getFileHandle(tableName);
 
         std::vector<Attribute> attrs;
@@ -338,7 +337,7 @@ namespace PeterDB {
                              const void *value,
                              const std::vector<std::string> &attributeNames,
                              RM_ScanIterator &rm_ScanIterator) {
-        if((fileHandleCache.find(tableName) == fileHandleCache.end()) && (tableName != "rm_test_large_table")) return -1;
+        if((fileHandleCache.find(tableName) == fileHandleCache.end())) return -1;
         FileHandle &fileHandle = getFileHandle(tableName);
 
         std::vector<Attribute> attrs;
