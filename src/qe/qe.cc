@@ -117,31 +117,44 @@ namespace PeterDB {
     BNLJoin::~BNLJoin() {
         this->currentMatchesWithLeftIn.clear();
 
-        for (auto& val : this->hashTable) {
-            for (auto& v : val.second) {
-                if (v.data != nullptr) {
-                    if (v.type == TypeVarChar) {
-                        delete[] static_cast<char*>(v.data); // 释放字符串
-                    } else {
-                        delete static_cast<int*>(v.data); // 释放 int 或 float
+        if (joinAttrType == TypeInt){
+            for (auto& val : this->intHashTable) {
+                for (auto& v : val.second) {
+                    if (v.data != nullptr) {
+                        delete static_cast<int*>(v.data);
+                        v.data = nullptr;
                     }
-                    v.data = nullptr; // 避免悬挂指针
                 }
+                val.second.clear();
             }
-            val.second.clear();
+            this->intHashTable.clear();
         }
 
-        this->hashTable.clear();
+        if (joinAttrType == TypeReal){
+            for (auto& val : this->floatHashTable) {
+                for (auto& v : val.second) {
+                    if (v.data != nullptr) {
+                        delete static_cast<float*>(v.data);
+                        v.data = nullptr;
+                    }
+                }
+                val.second.clear();
+            }
+            this->floatHashTable.clear();
+        }
+
     }
 
     RC BNLJoin::loadHashTable() {
-        hashTable.clear();
+        intHashTable.clear();
+        floatHashTable.clear();
+
         int memoryUsed = 0, status = 0;
         char buffer[PAGE_SIZE];
         memset(buffer, 0, PAGE_SIZE);
 
         int joinAttrIdxL = getAttrIndex(this->leftAttrs, this->condition.lhsAttr);
-        AttrType joinAttrType = this->leftAttrs[joinAttrIdxL].type;
+        joinAttrType = this->leftAttrs[joinAttrIdxL].type;
         int len = this->leftAttrs[joinAttrIdxL].type == TypeVarChar ? this->leftAttrs[joinAttrIdxL].length + sizeof(int) : 4;
 
         // build the hash table
@@ -153,13 +166,19 @@ namespace PeterDB {
             char attrDataL[len]; // without null indicator
             readAttributeValue(buffer, getNullIndicatorSizeQE(this->leftAttrs.size()), this->leftAttrs, joinAttrIdxL, attrDataL);
 
-            int key = *(int *)attrDataL;
             Value val;
             val.type = joinAttrType;
             val.data = new char[dataSize];
             memmove(val.data, buffer, dataSize);
 
-            hashTable[key].emplace_back(val);
+            if (joinAttrType == TypeInt){
+                int key = *(int *)attrDataL;
+                intHashTable[key].emplace_back(val);
+            }
+            else if (joinAttrType == TypeReal){
+                float key = *(float *)attrDataL;
+                floatHashTable[key].emplace_back(val);
+            }
 
             memoryUsed += dataSize;
         }
@@ -174,7 +193,7 @@ namespace PeterDB {
     void BNLJoin::loadRightIn() {
         this->rightIn->setIterator();
     }
-    // TODO: support float and varchar type
+    // TODO: support varchar type
     RC BNLJoin::getNextTuple(void *data) {
         int rightInStatus = 0;
 
@@ -207,16 +226,30 @@ namespace PeterDB {
             }
             else{
                 rightInStatus = this->rightIn->getNextTuple(bufferRightIn);
+                int joinAttrIdxR = getAttrIndex(this->rightAttrs, this->condition.rhsAttr);
+
+                currentMatchesIndex = 0;
+                currentMatchesWithLeftIn.clear();
 
                 if (rightInStatus == 0){
                     char attrDataR[4];
-                    readAttributeValue(bufferRightIn, getNullIndicatorSizeQE(this->rightAttrs.size()), this->rightAttrs, 0, attrDataR);
-                    int key = *(int *)attrDataR;
+                    readAttributeValue(bufferRightIn, getNullIndicatorSizeQE(this->rightAttrs.size()), this->rightAttrs, joinAttrIdxR, attrDataR);
 
-                    if(hashTable.find(key) != hashTable.end()){
-                        currentMatchesIndex = 0;
-                        currentMatchesWithLeftIn.clear();
-                        currentMatchesWithLeftIn = hashTable[key];
+                    if (joinAttrType == TypeInt){
+                        int key;
+                        memmove(&key, attrDataR, sizeof(int));
+
+                        if(intHashTable.find(key) != intHashTable.end()){
+                            currentMatchesWithLeftIn = intHashTable[key];
+                        }
+                    }
+                    else if (joinAttrType == TypeReal){
+                        float key;
+                        memmove(&key, attrDataR, sizeof(float));
+
+                        if(floatHashTable.find(key) != floatHashTable.end()){
+                            currentMatchesWithLeftIn = floatHashTable[key];
+                        }
                     }
                 }
                 else{

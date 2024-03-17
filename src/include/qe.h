@@ -203,11 +203,11 @@ namespace PeterDB {
         unsigned int numPages;
         std::vector<Attribute> leftAttrs;
         std::vector<Attribute> rightAttrs;
-        std::unordered_map<int, std::vector<Value>> hashTable;
-        std::vector<Value> currentMatchesWithLeftIn;
+        AttrType joinAttrType;
+        std::unordered_map<int, std::vector<Value>> intHashTable;
+        std::unordered_map<float, std::vector<Value>> floatHashTable;
         int currentMatchesIndex = 0;
-        bool needToLoadHashTable = true;
-        bool rightInEnd = false;
+        std::vector<Value> currentMatchesWithLeftIn;
         bool leftInEnd = false;
         char bufferRightIn[PAGE_SIZE];
 
