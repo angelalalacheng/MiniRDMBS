@@ -19,6 +19,6 @@ For example, using breakpoints, step in/step out/step over, evaluate expressions
 - Describe how you use Valgrind to detect memory leaks and other problems in your code and show screenshot of the Valgrind report.
 ![](/Users/angela_cheng/Desktop/截圖 2024-01-23 中午12.41.45.png)
 
-After reading the message from Valgrind, I find the in some function I use "new" to new char array.
-However, I forget to "delete". It may cause the memory leak.
-But, I have no time to check again (massive insert cost lots of time), so, I paste the previous result. 
+After reading the message from Valgrind, I find the in BNL Join function I use "new" to hold the record.
+However, I forget to "delete". It caused the memory leak.
+So, inside the BNL Join destructor, I add "delete" to release the memory.
